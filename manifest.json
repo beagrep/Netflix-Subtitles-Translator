@@ -1,9 +1,11 @@
 {
    "background": {
-      "scripts": [ "background.js" ]
+      "scripts": [ "index.js" ]
    },
 	"browser_action": {
-		"default_icon": "icon-small.png"
+		"default_icon": "icon-small.png",
+		"default_title": "Netflix Subtitles Translator",
+		"default_popup": "popup.html"
 	},
 	"options_page": "options.html",
 	"content_scripts": [{
@@ -23,5 +25,5 @@
    "permissions": [ "contextMenus", "tabs", "storage" ],
    "short_name": "Netflix Subtitles Translator",
    "update_url": "https://clients2.google.com/service/update2/crx",
-   "version": "0.1.2"
+   "version": "1.7"
 }

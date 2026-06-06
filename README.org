@@ -1,0 +1,96 @@
+* DONE I have installed this plugin from chrome store onto my Edge browser, but it is not working, please help fix it.
+
+There is no target language option for the menu, only Font Size, Width, and hide original subtitle (the last does work).
+
+Root cause: =manifest.json= was loading =background.js=, a leftover script
+from an unrelated "Preach!" extension (with a stray =alert()= and an invalid
+=chrome.contextMenus.create({onclick:...})= call that throws on load). The
+real background logic lived in =index.js= but was never registered. Also,
+=popup.html= contained only junk text (=xsasasx=, raw =<script>= tag in body)
+so clicking the toolbar icon showed nothing, and the only way to reach the
+target-language picker was via =chrome://extensions= → Details → Extension
+options — which most users (the reporter included) never find. The "Font
+Size / Width / hide original subtitle" menu the user saw is Netflix's own
+built-in subtitle menu, not this extension.
+
+Fixes:
+- =manifest.json=: load =index.js= as the background script (not the broken
+  =background.js=). Add =default_title= and =default_popup= so the toolbar
+  icon opens a real popup. Bumped version to 0.1.2 → 0.1.3.
+- =popup.html= + new =popup.js=: replaced the junk popup with a small UI
+  exposing the *Target language* dropdown (same 100+ languages as the full
+  options page), a "Toggle translator panel" button (replaces the old
+  =browserAction.onClicked= handler, which is disabled when =default_popup=
+  is set), and a "More options…" link to the full options page via
+  =chrome.runtime.openOptionsPage()=.
+- =options.js=: removed the dead =save_options2()= stub (had a stray
+  =alert('')= and unreachable code referencing nonexistent DOM ids).
+- =index.js=: removed the dead =browserAction.onClicked= handler (superseded
+  by the popup's toggle button); kept the icon enable/disable logic that
+  reacts to tab URL changes.
+
+Note: =background.js= is left on disk but is no longer referenced by the
+manifest, so its broken code no longer runs. The Netflix DOM selectors in
+=content-script.js= (=.player-timedtext=,
+=.PlayerControlsNeo__button-control-row=, =.button-nfplayerPlay/Pause=) are
+unchanged — if the side panel still fails to appear on current Netflix,
+those selectors likely need re-checking against the live player DOM (the
+last commit "Selector has changed. quick fix" hints this has happened
+before), but that requires inspecting Netflix in a browser and is outside
+the scope of this fix.
+
+* DONE Great, I can now read the subtitles. Now, some new requirements:
+
+1. I want you to add options for both source language and target language (you have already target language option added, just add source language). So that I can have more control about it.
+
+2. Another feature request, allow me to save the translated subtitles with the original one, side by side. Maybe with html, maybe with markdown, you help me design, but I will need to create Anki Notes for them, so best make a design that is easy to create anki notes, for e.g., I use org-anki, so it would be great if you save every original subtitle line with a '* ' at the line beginning, so that automatically become an org-anki entry. like this
+
+   #+begin_src org
+     ,* Hello World # this is one line of the original subtitle
+
+     你好，世界 # this is the translation
+
+     ,* Another Subtitle Line
+     另一条字幕
+   #+end_src
+
+   Maybe add a button for it?
+
+3. At the beginning of the translations, maybe add the netflix movie/TV's meta info, such as the url/title, etc, the url should be easy, the title can be a bit tricker, or even impossible, please research if possible.
+
+Implemented in v1.7. Files touched: =popup.html=, =popup.js=, =options.html=,
+=options.js=, =content-script.js=, =manifest.json=.
+
+1. *Source language* — new dropdown in both the popup and the full options
+   page, stored as =srcLang= in =chrome.storage.sync= (default =auto=). The
+   content script now builds the Google Translate URL with the user-chosen
+   =sl=, via two helpers =gtansUrl()= / =ftranUrl()= (replaced the hardcoded
+   =config.gtans= / =config.ftran= prefixes).
+
+2. *Export to .org* — every captured subtitle is buffered in-memory as
+   ={ original, translation, ts }=. New *Export captured subtitles (.org)*
+   button in the popup sends an =exportOrg= message; the content script
+   builds an org-mode document and triggers a download via a Blob URL +
+   programmatic =<a download>=. Format matches the requested shape for
+   org-anki — each original subtitle is a level-1 heading (=* ...=), the
+   translation is the body. A leading literal =*= in subtitle text is
+   escaped to =\*= so it doesn't break the heading structure.
+
+3. *Header with Netflix meta* — the export starts with =#+TITLE=, =#+DATE=,
+   =#+URL=, =#+SOURCE_LANG=, =#+TARGET_LANG=, =#+SUBTITLE_COUNT=. Title is
+   best-effort: tries =[data-uia="video-title"]=, =.video-title h4=,
+   =.video-title=, =.ellipsize-text=, =.title-info-title=,
+   =.title-info h1=, =h1.title= in order, then falls back to
+   =document.title= with the trailing =" | Netflix"= stripped. Netflix
+   often hides the title in a transient overlay that disappears after a
+   few seconds, so the most reliable moment to click *Export* is right
+   after the player tooltip is visible.
+
+Caveats:
+- The buffer lives in the page's content-script context. Reloading the
+  Netflix tab clears it; export before reloading.
+- =chrome.storage.sync= is used, so srcLang/lang sync across signed-in
+  browser profiles. Reload the Netflix tab after changing language for
+  the new value to take effect on subsequent subtitles (already-fetched
+  translations are cached for that session).
+

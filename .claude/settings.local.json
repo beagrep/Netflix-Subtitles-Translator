@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(emacsclient -e '\\(let \\(\\(f \"/Users/baohaojun/src/reading/Netflix-Subtitles-Translator/README.org\"\\)\\) \\(when \\(get-file-buffer f\\) \\(with-current-buffer \\(get-file-buffer f\\) \\(revert-buffer t t t\\)\\) \"reverted\"\\)\\)')",
+      "Bash(open -a \"Microsoft Edge\" \"edge://extensions/\")",
+      "Bash(pbcopy)",
+      "Bash(ls -la /Users/baohaojun/src/reading/Netflix-Subtitles-Translator/*.pem /Users/baohaojun/src/reading/*.pem /Users/baohaojun/src/reading/Netflix-Subtitles-Translator.pem 2>&1 | grep -v \"No such\")",
+      "Bash(rm /Users/baohaojun/src/reading/Netflix-Subtitles-Translator.pem /Users/baohaojun/src/reading/Netflix-Subtitles-Translator.crx && ls /Users/baohaojun/src/reading/Netflix-Subtitles-Translator.* 2>&1)",
+      "Bash(/bin/rm -f /Users/baohaojun/src/reading/Netflix-Subtitles-Translator.pem /Users/baohaojun/src/reading/Netflix-Subtitles-Translator.crx)",
+      "Bash(curl -sS -o /tmp/gtrans.json -w \"HTTP %{http_code}\\\\n\" \"https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&dt=t&dj=1&source=icon&tk=467103.467103&q=hello%20world&tl=es\")",
+      "Read(//tmp/**)",
+      "Bash(curl -sS -o /tmp/ftran.json -w \"HTTP %{http_code}\\\\n\" \"https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&hl=en-US&dt=t&dt=bd&dj=1&q=hello&tl=es\")",
+      "Bash(curl -sS --max-time 10 -x http://localhost:19999/ -o /tmp/gtrans.json -w \"HTTP %{http_code}\\\\n\" \"https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&dt=t&dj=1&source=icon&tk=467103.467103&q=hello%20world&tl=es\")",
+      "Bash(curl -sS --max-time 10 -x http://localhost:19999/ -o /tmp/ftran.json -w \"HTTP %{http_code}\\\\n\" \"https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&hl=en-US&dt=t&dt=bd&dj=1&q=hello&tl=es\")"
+    ]
+  }
+}
