@@ -227,3 +227,21 @@ Two root causes, two fixes:
 Also simplified =getVideoEl()= to just =document.querySelector('video')=
 (the =.VideoContainer video= compound was an over-specific guess that
 could miss on current Netflix DOM).
+
+*Follow-up (v1.12):* the v1.11 seek path worked mechanically
+(=video.currentTime= was set), but Netflix interpreted the direct
+=currentTime= write as a tampered media event and bounced the user to a
+"Pardon the interruption / Sorry, we're having trouble with your request"
+error page (also visibly tearing =.player-timedtext= down, which the
+log showed as =launched=false= polls immediately after the seek).
+
+Switched to Netflix's *own* in-page player API. =injectNetflixSeekBridge()=
+injects a one-shot =<script>= tag into the page context (so it can read
+=window.netflix=, which is invisible to the content-script's isolated
+world). The bridge listens for =postMessage({__nst:'seek', sec})= and
+calls =netflix.appContext.state.playerApp.getAPI().videoPlayer
+.getVideoPlayerBySessionId(<watch-session>).seek(ms)=. =seekVideo()= in
+the content script now just =postMessage='s and waits for the
+=seek-result= echo (logged as =[NST] seek-result: {ok, via}=). This
+performs an in-place seek without tearing the player down — no more
+=currentTime= setter, no more "Pardon the interruption".

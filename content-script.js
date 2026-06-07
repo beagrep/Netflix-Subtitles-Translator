@@ -231,11 +231,62 @@
 		return t;
 	}
 
+	function injectNetflixSeekBridge() {
+		if (document.getElementById('nst-netflix-bridge')) return;
+		try {
+			let s = document.createElement('script');
+			s.id = 'nst-netflix-bridge';
+			s.textContent = '(' + function(){
+				function findPlayer(){
+					try {
+						var api = netflix && netflix.appContext && netflix.appContext.state
+							&& netflix.appContext.state.playerApp && netflix.appContext.state.playerApp.getAPI();
+						if (!api || !api.videoPlayer) return null;
+						var ids = api.videoPlayer.getAllPlayerSessionIds();
+						for (var i = 0; i < ids.length; i++) {
+							if (ids[i] && ids[i].indexOf('watch-') === 0) {
+								return api.videoPlayer.getVideoPlayerBySessionId(ids[i]);
+							}
+						}
+						if (ids[0]) return api.videoPlayer.getVideoPlayerBySessionId(ids[0]);
+					} catch(e){}
+					return null;
+				}
+				window.addEventListener('message', function(ev){
+					if (!ev.data || ev.data.__nst !== 'seek') return;
+					var sec = ev.data.sec;
+					var p = findPlayer();
+					var ok = false, via = 'none', err = '';
+					try {
+						if (p && typeof p.seek === 'function') {
+							p.seek(Math.round(sec * 1000));
+							ok = true; via = 'player.seek';
+						}
+					} catch(e){ err = String(e && e.message || e); }
+					window.postMessage({ __nst: 'seek-result', ok: ok, via: via, err: err, sec: sec }, '*');
+				});
+			}.toString() + ')();';
+			(document.head || document.documentElement).appendChild(s);
+			s.remove();
+		} catch(e) { WARN('inject bridge failed:', e && e.message); }
+	}
+	injectNetflixSeekBridge();
+
+	window.addEventListener('message', function(ev){
+		if (ev.source !== window || !ev.data || ev.data.__nst !== 'seek-result') return;
+		LOG('seek-result:', ev.data);
+	});
+
 	function seekVideo(sec) {
-		let v = getVideoEl();
-		LOG('seekVideo:', sec, 'videoEl=', !!v);
-		if (!v || typeof sec !== 'number' || !isFinite(sec)) return false;
-		try { v.currentTime = sec; LOG('seekVideo OK, currentTime now=', v.currentTime); return true; } catch(e){ WARN('seekVideo failed:', e && e.message); return false; }
+		if (typeof sec !== 'number' || !isFinite(sec)) return false;
+		LOG('seekVideo:', sec, '(via Netflix player API)');
+		try {
+			window.postMessage({ __nst: 'seek', sec: sec }, '*');
+			return true;
+		} catch(e) {
+			WARN('seekVideo postMessage failed:', e && e.message);
+			return false;
+		}
 	}
 
 	function subtitleSentence(){
