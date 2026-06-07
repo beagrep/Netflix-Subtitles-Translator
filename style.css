@@ -84,6 +84,14 @@ body:not(.open-tr-panel) #translate-ext-resize-handle{
 }
 
 #translate-ext #subtitle-wrap dl{border-bottom:1px solid #eee; margin:0; padding:15px; }
+#translate-ext #subtitle-wrap dl.nst-current{
+	background:#fff8c5;
+	border-left:3px solid #f6c200;
+	padding-left:12px;
+}
+#translate-ext #subtitle-wrap dl.nst-current:hover{
+	background:#fff3a3 !important;
+}
 #translate-ext #subtitle-wrap dl:not(.sent-tr-open){cursor:pointer; }
 #translate-ext #subtitle-wrap dl:not(.sent-tr-open):hover{background:#eee; }
 

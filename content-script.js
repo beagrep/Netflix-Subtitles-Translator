@@ -212,7 +212,243 @@
 					return calback(data);
 				}).catch(function(err) {
 					WARN('fetch FAILED:', url, '->', err && err.message ? err.message : err);
+					try { calback(null); } catch(e){}
 				});
+	}
+
+	const NST_DB_KEY = 'nstSqliteDump:v1';
+	const NST_DB_LEGACY_PREFIX = 'nstTr:v1:';
+	let nstDB = (function(){
+		let SQL = null, db = null, ready = false;
+		let openWaiters = [];
+		let saveTimer = null;
+		let pendingMigration = null;
+
+		function init() {
+			if (typeof initSqlJs !== 'function') {
+				WARN('sql.js (initSqlJs) not loaded — DB disabled, falling back to RAM only');
+				return;
+			}
+			initSqlJs({
+				locateFile: function(f){ return chrome.runtime.getURL('vendor/sqljs/' + f); }
+			}).then(function(SQLLib){
+				SQL = SQLLib;
+				return loadDump();
+			}).then(function(dump){
+				try {
+					db = dump ? new SQL.Database(dump) : new SQL.Database();
+				} catch(e) {
+					WARN('failed to open dump, starting fresh:', e && e.message);
+					db = new SQL.Database();
+				}
+				createSchema();
+				maybeMigrateLegacyCache();
+				ready = true;
+				LOG('nstDB ready; rows so far:', stats());
+				openWaiters.forEach(function(fn){ try { fn(); } catch(e){} });
+				openWaiters = [];
+			}).catch(function(e){
+				WARN('nstDB init failed:', e && e.message);
+			});
+		}
+
+		function loadDump() {
+			return new Promise(function(resolve){
+				try {
+					chrome.storage.local.get(NST_DB_KEY, function(items){
+						let v = items && items[NST_DB_KEY];
+						if (v && v.bytes && Array.isArray(v.bytes)) {
+							LOG('nstDB loading existing dump, bytes:', v.bytes.length);
+							resolve(new Uint8Array(v.bytes));
+						} else {
+							resolve(null);
+						}
+					});
+				} catch(e) { resolve(null); }
+			});
+		}
+
+		function createSchema() {
+			db.run([
+				'CREATE TABLE IF NOT EXISTS videos (',
+				'  video_id TEXT PRIMARY KEY,',
+				'  url TEXT NOT NULL,',
+				'  title TEXT,',
+				'  src_lang TEXT NOT NULL,',
+				'  tgt_lang TEXT NOT NULL,',
+				'  first_seen INTEGER NOT NULL,',
+				'  last_seen INTEGER NOT NULL',
+				');',
+				'CREATE TABLE IF NOT EXISTS subtitles (',
+				'  video_id TEXT NOT NULL,',
+				'  video_time REAL NOT NULL,',
+				'  original TEXT NOT NULL,',
+				'  translation TEXT,',
+				'  status TEXT NOT NULL,',
+				'  attempts INTEGER NOT NULL DEFAULT 0,',
+				'  last_attempt INTEGER,',
+				'  PRIMARY KEY (video_id, video_time, original)',
+				');',
+				'CREATE INDEX IF NOT EXISTS idx_subtitles_video ON subtitles(video_id, video_time);',
+				'CREATE TABLE IF NOT EXISTS cache_translations (',
+				'  src_lang TEXT NOT NULL,',
+				'  tgt_lang TEXT NOT NULL,',
+				'  original TEXT NOT NULL,',
+				'  translation TEXT NOT NULL,',
+				'  ts INTEGER NOT NULL,',
+				'  PRIMARY KEY (src_lang, tgt_lang, original)',
+				');'
+			].join('\n'));
+		}
+
+		function maybeMigrateLegacyCache() {
+			try {
+				chrome.storage.local.get(null, function(items){
+					if (!items) return;
+					let keys = Object.keys(items).filter(function(k){ return k.indexOf(NST_DB_LEGACY_PREFIX) === 0; });
+					if (!keys.length) return;
+					LOG('nstDB migrating', keys.length, 'legacy cache entries');
+					let stmt = db.prepare('INSERT OR IGNORE INTO cache_translations(src_lang,tgt_lang,original,translation,ts) VALUES (?,?,?,?,?)');
+					let now = Date.now();
+					keys.forEach(function(k){
+						let parts = k.substring(NST_DB_LEGACY_PREFIX.length).split(':');
+						if (parts.length < 3) return;
+						let src = parts[0], tgt = parts[1];
+						let text = parts.slice(2).join(':');
+						let v = items[k];
+						if (!v || typeof v.t !== 'string') return;
+						stmt.run([src, tgt, text, v.t, v.ts || now]);
+					});
+					stmt.free();
+					chrome.storage.local.remove(keys, function(){
+						LOG('nstDB migration done; legacy keys removed');
+						scheduleSave();
+					});
+				});
+			} catch(e) { WARN('migration failed:', e && e.message); }
+		}
+
+		function stats() {
+			try {
+				let r = db.exec('SELECT (SELECT count(*) FROM videos) v, (SELECT count(*) FROM subtitles) s, (SELECT count(*) FROM cache_translations) c');
+				if (r && r[0]) return r[0].values[0];
+			} catch(e) {}
+			return null;
+		}
+
+		function scheduleSave() {
+			if (!ready) return;
+			if (saveTimer) clearTimeout(saveTimer);
+			saveTimer = setTimeout(function(){
+				saveTimer = null;
+				try {
+					let bytes = db.export();
+					let obj = {};
+					obj[NST_DB_KEY] = { bytes: Array.from(bytes), savedAt: Date.now() };
+					chrome.storage.local.set(obj, function(){
+						if (chrome.runtime.lastError) WARN('nstDB save error:', chrome.runtime.lastError.message);
+						else LOG('nstDB saved, bytes:', bytes.length);
+					});
+				} catch(e) { WARN('nstDB export failed:', e && e.message); }
+			}, 2000);
+		}
+
+		function whenReady(cb) {
+			if (ready) return cb();
+			openWaiters.push(cb);
+		}
+
+		function getCachedTranslation(src, tgt, text, cb) {
+			whenReady(function(){
+				try {
+					let stmt = db.prepare('SELECT translation FROM cache_translations WHERE src_lang=? AND tgt_lang=? AND original=?');
+					stmt.bind([src, tgt, text]);
+					let result = null;
+					if (stmt.step()) result = stmt.getAsObject().translation;
+					stmt.free();
+					cb(result || null);
+				} catch(e) { WARN('getCachedTranslation:', e && e.message); cb(null); }
+			});
+		}
+
+		function setCachedTranslation(src, tgt, text, translation) {
+			whenReady(function(){
+				try {
+					let stmt = db.prepare('INSERT OR REPLACE INTO cache_translations(src_lang,tgt_lang,original,translation,ts) VALUES (?,?,?,?,?)');
+					stmt.run([src, tgt, text, translation, Date.now()]);
+					stmt.free();
+					scheduleSave();
+				} catch(e) { WARN('setCachedTranslation:', e && e.message); }
+			});
+		}
+
+		function upsertVideo(videoId, url, title, src, tgt) {
+			whenReady(function(){
+				try {
+					let now = Date.now();
+					let stmt = db.prepare('INSERT INTO videos(video_id,url,title,src_lang,tgt_lang,first_seen,last_seen) VALUES (?,?,?,?,?,?,?) ON CONFLICT(video_id) DO UPDATE SET url=excluded.url, title=COALESCE(NULLIF(excluded.title,""),videos.title), src_lang=excluded.src_lang, tgt_lang=excluded.tgt_lang, last_seen=excluded.last_seen');
+					stmt.run([videoId, url, title || '', src, tgt, now, now]);
+					stmt.free();
+					scheduleSave();
+				} catch(e) { WARN('upsertVideo:', e && e.message); }
+			});
+		}
+
+		function recordSubtitle(videoId, videoTime, original, translation, status) {
+			whenReady(function(){
+				try {
+					let now = Date.now();
+					let stmt = db.prepare('INSERT INTO subtitles(video_id,video_time,original,translation,status,attempts,last_attempt) VALUES (?,?,?,?,?,?,?) ON CONFLICT(video_id,video_time,original) DO UPDATE SET translation=COALESCE(excluded.translation, subtitles.translation), status=excluded.status, attempts=subtitles.attempts+1, last_attempt=excluded.last_attempt');
+					stmt.run([videoId, videoTime, original, translation || null, status, 1, now]);
+					stmt.free();
+					scheduleSave();
+				} catch(e) { WARN('recordSubtitle:', e && e.message); }
+			});
+		}
+
+		function loadVideoSubtitles(videoId, cb) {
+			whenReady(function(){
+				try {
+					let stmt = db.prepare('SELECT video_time, original, translation, status FROM subtitles WHERE video_id=? ORDER BY video_time');
+					stmt.bind([videoId]);
+					let out = [];
+					while (stmt.step()) out.push(stmt.getAsObject());
+					stmt.free();
+					cb(out);
+				} catch(e) { WARN('loadVideoSubtitles:', e && e.message); cb([]); }
+			});
+		}
+
+		init();
+
+		return {
+			whenReady: whenReady,
+			getCachedTranslation: getCachedTranslation,
+			setCachedTranslation: setCachedTranslation,
+			upsertVideo: upsertVideo,
+			recordSubtitle: recordSubtitle,
+			loadVideoSubtitles: loadVideoSubtitles,
+			scheduleSave: scheduleSave
+		};
+	})();
+
+	function transCacheGet(srcLang, tgtLang, text, cb) {
+		nstDB.getCachedTranslation(srcLang || 'auto', tgtLang || 'en', text, cb);
+	}
+
+	function transCacheSet(srcLang, tgtLang, text, translation) {
+		if (!translation) return;
+		nstDB.setCachedTranslation(srcLang || 'auto', tgtLang || 'en', text, translation);
+	}
+
+	function getNetflixVideoId() {
+		let m = location.pathname.match(/\/watch\/(\d+)/);
+		return m ? m[1] : null;
+	}
+
+	function getCanonicalWatchUrl() {
+		let id = getNetflixVideoId();
+		return id ? (location.origin + '/watch/' + id) : location.href;
 	}
 
 
@@ -373,19 +609,20 @@
 				let elm = document.querySelector('#'+config.mainWrap+' #'+config.subtitleWrap);
 				if (!elm) return;
 				let panelOpen = document.body.classList.contains('open-tr-panel');
-				if (window.__nstNonLinear && insertedDl) {
-					if (panelOpen) {
-						try { insertedDl.scrollIntoView({ block: 'center' }); } catch(_) {
-							elm.scrollTop = Math.max(0, insertedDl.offsetTop - elm.clientHeight/2);
-						}
+				if (!panelOpen) {
+					if (elm.offsetHeight + elm.scrollTop + 150 > elm.scrollHeight) {
+						elm.scrollBy(0, 300);
 					}
 					return;
 				}
-				if (panelOpen) {
-					elm.scrollTop = elm.scrollHeight;
-				} else if (elm.offsetHeight + elm.scrollTop + 150 > elm.scrollHeight) {
-					elm.scrollBy(0, 300);
+				let isLast = insertedDl && insertedDl === elm.lastElementChild;
+				if (insertedDl && (window.__nstNonLinear || !isLast)) {
+					try { insertedDl.scrollIntoView({ block: 'center' }); } catch(_) {
+						elm.scrollTop = Math.max(0, insertedDl.offsetTop - elm.clientHeight/2);
+					}
+					return;
 				}
+				elm.scrollTop = elm.scrollHeight;
 			},
 			addClickListner:function(targetDl){
 				let last = targetDl;
@@ -667,7 +904,7 @@
 	function buildOrgExport() {
 		let now = new Date();
 		let title = getNetflixTitle();
-		let url = location.href;
+		let url = getCanonicalWatchUrl();
 		let header = '';
 		header += '#+TITLE: ' + title + '\n';
 		header += '#+DATE: ' + now.toISOString() + '\n';
@@ -718,6 +955,69 @@
 
 			let subtitleBefore = '';
 			let wait = false;
+			let videoId = getNetflixVideoId();
+			LOG('Netflix videoId =', videoId);
+
+			if (videoId) {
+				nstDB.upsertVideo(videoId, getCanonicalWatchUrl(), getNetflixTitle(), config.user.srcLang || 'auto', config.user.lang || 'en');
+				nstDB.loadVideoSubtitles(videoId, function(rows){
+					if (!rows || !rows.length) {
+						LOG('nstDB: no prior subtitles for video', videoId);
+						return;
+					}
+					LOG('nstDB: preloading', rows.length, 'subtitles for video', videoId);
+					rows.forEach(function(r){
+						let entry = {
+							original: r.original,
+							translation: r.translation || '',
+							ts: Date.now(),
+							videoTime: typeof r.video_time === 'number' ? r.video_time : null,
+							dl: null,
+							preloaded: true,
+							status: r.status
+						};
+						captures.push(entry);
+						subtitleSentence().add(entry.original, entry.videoTime);
+						entry.dl = (function(){
+							let dls = document.querySelectorAll('#'+config.mainWrap+' #'+config.subtitleWrap+' dl[data-vt]');
+							let want = (typeof entry.videoTime === 'number') ? entry.videoTime.toFixed(3) : null;
+							if (want) {
+								for (let i = dls.length - 1; i >= 0; i--) {
+									if (dls[i].getAttribute('data-vt') === want) return dls[i];
+								}
+							}
+							return dls[dls.length - 1] || null;
+						})();
+						if (entry.translation && entry.dl) {
+							entry.dl.classList.add(config.translatedSentence);
+							let dd = entry.dl.querySelector('dd');
+							if (dd) dd.textContent = entry.translation;
+						}
+					});
+					retryMissingTranslations();
+				});
+			}
+
+			let retryQueue = [];
+			let retryRunning = false;
+			function retryMissingTranslations() {
+				retryQueue = captures.filter(function(c){
+					return !c.translation || c.status === 'pending' || c.status === 'failed';
+				});
+				if (!retryQueue.length) return;
+				LOG('nstDB: scheduling', retryQueue.length, 'translation retries');
+				pumpRetry();
+			}
+			function pumpRetry() {
+				if (retryRunning) return;
+				let next = retryQueue.shift();
+				if (!next) return;
+				retryRunning = true;
+				autoTranslate(next.original, next, function done(){
+					retryRunning = false;
+					setTimeout(pumpRetry, 250);
+				});
+			}
 
 			function extractSubtitle() {
 				let parts = [];
@@ -742,35 +1042,79 @@
 				return joined;
 			}
 
-			function autoTranslate(sentence, entry) {
-				if (!sentence) return;
-				loadJson(gtansUrl(sentence), function(data){
-					let gtrans = '';
-					try {
-						data['sentences'].forEach(function(seg){ gtrans += seg.trans + ' '; });
-					} catch(e){ return; }
-					gtrans = gtrans.trim();
-					if (!gtrans) return;
-					LOG('auto-translation:', gtrans);
-					entry.translation = gtrans;
-					let target = entry.dl;
-					if (!target) {
-						let dls = document.querySelectorAll('#'+config.mainWrap+' #'+config.subtitleWrap+' dl');
-						target = dls[dls.length - 1];
-					}
-					if (target) {
-						target.classList.add(config.translatedSentence);
-						let dd = target.querySelector('dd');
-						if (dd) dd.textContent = gtrans;
-					}
-					let sw = document.querySelector('#'+config.mainWrap+' #'+config.subtitleWrap);
-					if (sw && document.body.classList.contains('open-tr-panel')) {
-						if (window.__nstNonLinear && target) {
-							requestAnimationFrame(function(){ try { target.scrollIntoView({ block: 'center' }); } catch(_){} });
-						} else {
-							requestAnimationFrame(function(){ sw.scrollTop = sw.scrollHeight; });
+			function applyTranslation(target, gtrans, entry) {
+				if (!gtrans) return;
+				entry.translation = gtrans;
+				let dl = target || entry.dl;
+				if (!dl) {
+					let dls = document.querySelectorAll('#'+config.mainWrap+' #'+config.subtitleWrap+' dl');
+					dl = dls[dls.length - 1];
+				}
+				if (dl) {
+					dl.classList.add(config.translatedSentence);
+					let dd = dl.querySelector('dd');
+					if (dd) dd.textContent = gtrans;
+				}
+				let sw = document.querySelector('#'+config.mainWrap+' #'+config.subtitleWrap);
+				if (!sw || !document.body.classList.contains('open-tr-panel')) return;
+				let isLast = dl && dl === sw.lastElementChild;
+				if (dl && (window.__nstNonLinear || !isLast)) {
+					requestAnimationFrame(function(){ try { dl.scrollIntoView({ block: 'center' }); } catch(_){} });
+				} else {
+					requestAnimationFrame(function(){ sw.scrollTop = sw.scrollHeight; });
+				}
+			}
+
+			function autoTranslate(sentence, entry, done) {
+				if (!sentence) { if (done) done(); return; }
+				let src = config.user.srcLang || 'auto';
+				let tgt = config.user.lang || 'en';
+				let finish = function(){ if (done) try { done(); } catch(e){} };
+				transCacheGet(src, tgt, sentence, function(cached){
+					if (cached) {
+						LOG('auto-translation (cached):', cached);
+						applyTranslation(entry.dl, cached, entry);
+						entry.status = 'ok';
+						if (videoId && typeof entry.videoTime === 'number') {
+							nstDB.recordSubtitle(videoId, entry.videoTime, entry.original, cached, 'ok');
 						}
+						return finish();
 					}
+					if (videoId && typeof entry.videoTime === 'number' && !entry.preloaded) {
+						nstDB.recordSubtitle(videoId, entry.videoTime, entry.original, null, 'pending');
+					}
+					loadJson(gtansUrl(sentence), function(data){
+						if (!data) {
+							if (videoId && typeof entry.videoTime === 'number') {
+								nstDB.recordSubtitle(videoId, entry.videoTime, entry.original, null, 'failed');
+							}
+							return finish();
+						}
+						let gtrans = '';
+						try {
+							data['sentences'].forEach(function(seg){ gtrans += seg.trans + ' '; });
+						} catch(e){
+							if (videoId && typeof entry.videoTime === 'number') {
+								nstDB.recordSubtitle(videoId, entry.videoTime, entry.original, null, 'failed');
+							}
+							return finish();
+						}
+						gtrans = gtrans.trim();
+						if (!gtrans) {
+							if (videoId && typeof entry.videoTime === 'number') {
+								nstDB.recordSubtitle(videoId, entry.videoTime, entry.original, null, 'failed');
+							}
+							return finish();
+						}
+						LOG('auto-translation:', gtrans);
+						transCacheSet(src, tgt, sentence, gtrans);
+						entry.status = 'ok';
+						if (videoId && typeof entry.videoTime === 'number') {
+							nstDB.recordSubtitle(videoId, entry.videoTime, entry.original, gtrans, 'ok');
+						}
+						applyTranslation(entry.dl, gtrans, entry);
+						finish();
+					});
 				});
 			}
 
@@ -801,13 +1145,26 @@
 				return null;
 			}
 
+			function setCurrent(dl) {
+				try {
+					let wrap = document.querySelector('#'+config.mainWrap+' #'+config.subtitleWrap);
+					if (!wrap) return;
+					let prev = wrap.querySelectorAll('dl.nst-current');
+					prev.forEach(function(p){ if (p !== dl) p.classList.remove('nst-current'); });
+					if (dl) dl.classList.add('nst-current');
+				} catch(e){}
+			}
+
 			function readAndHandle() {
 				if (wait) return;
 				wait = true;
 				setTimeout(function(){
 					wait = false;
 					let subtitle = extractSubtitle();
-					if (!subtitle) return;
+					if (!subtitle) {
+						setCurrent(null);
+						return;
+					}
 					if (subtitle === subtitleBefore && !window.__nstNonLinear) return;
 
 					LOG('subtitle:', subtitle);
@@ -817,6 +1174,7 @@
 					if (dup) {
 						LOG('subtitle is duplicate of capture vt=', dup.videoTime, '— scrolling to existing row');
 						let dl = findDlByCapture(dup);
+						setCurrent(dl);
 						let sw = document.querySelector('#'+config.mainWrap+' #'+config.subtitleWrap);
 						if (dl && sw && document.body.classList.contains('open-tr-panel')) {
 							try { dl.scrollIntoView({ block: 'center' }); } catch(_) {
@@ -841,6 +1199,7 @@
 						}
 						return dls[dls.length - 1] || null;
 					})();
+					setCurrent(entry.dl);
 					subtitleBefore = subtitle;
 					autoTranslate(subtitle, entry);
 				}, 100);

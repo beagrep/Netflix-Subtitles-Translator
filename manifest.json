@@ -9,11 +9,12 @@
 	},
 	"options_page": "options.html",
 	"content_scripts": [{
-      "js": [ "content-script.js" ],
+      "js": [ "vendor/sqljs/sql-wasm.js", "content-script.js" ],
 	  "css": [ "style.css" ],
       "matches": [ "*://*.netflix.com/*" ],
       "run_at": "document_end"
    }],
+   "web_accessible_resources": [ "vendor/sqljs/sql-wasm.wasm" ],
    "description": "Learn English through Netflix Movies. Translate whole phrase or each word with audio and visual support.",
    "icons": {
       "128": "icon-large.png",
@@ -25,5 +26,5 @@
    "permissions": [ "contextMenus", "tabs", "storage" ],
    "short_name": "Netflix Subtitles Translator",
    "update_url": "https://clients2.google.com/service/update2/crx",
-   "version": "1.15"
+   "version": "1.18"
 }
