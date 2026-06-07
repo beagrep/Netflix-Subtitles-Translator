@@ -245,3 +245,152 @@ the content script now just =postMessage='s and waits for the
 =seek-result= echo (logged as =[NST] seek-result: {ok, via}=). This
 performs an in-place seek without tearing the player down — no more
 =currentTime= setter, no more "Pardon the interruption".
+
+* DONE Note, when I jump back to an old timestamp, you should not insert new translation of the old subtitle, instead, you should scroll to the old subtitle.
+
+Also, if I jumped back using progress bar myself into a time that you have not done subtitle translation before, you should insert the subtitle translations sorted according to the timestamps, not always at the bottom, and scroll to its position, not always to the bottom, the old scroll to the bottom is only for linear playback, once jumping is involved, you should change that to "scroll to the correct subtitle and make sure both source and target subtitles are displayed"
+
+Implemented in v1.13. Files touched: =content-script.js=, =manifest.json=.
+
+Four coordinated changes turn the panel from "growing tape" into "list
+that tracks playback":
+
+1. *Non-linear mode flag* — =window.__nstNonLinear= is set =true= in two
+   places:
+   - =seekVideo()= sets it the moment the user click-/dblclick-seeks
+     from the panel (we know our own intent).
+   - =attachVideoSeekWatcher()= polls =document.querySelector('video')=
+     every 500 ms, attaches a =seeking= listener once, and also
+     compares =currentTime= deltas — if =Math.abs(now - lastT) > 1.5=
+     it flags a manual scrub on Netflix's progress bar (which we
+     can't intercept directly because Netflix re-renders the seek bar
+     in its own React tree). The flag clears automatically once the
+     poll has seen ~1.5 s of clean monotonic forward playback after
+     the seek.
+
+2. *Dedup on jump-back* — =readAndHandle()= now calls
+   =findExistingCapture(subtitle, vt)= before inserting. The match
+   criterion is "same =original= text AND =|videoTime - vt| <= 3s=",
+   which avoids false-positive merges on repeated lines (chorus
+   lyrics, recurring "Yes." / "No.") while still recognizing the same
+   line on a re-seek. On a hit we look up the existing =<dl>= (cached
+   on =entry.dl= or refound by =data-vt=) and =scrollIntoView({block:
+   'center'})= instead of inserting a new row. Also relaxed the
+   =subtitle === subtitleBefore= guard to allow re-processing while
+   non-linear, so seeking back to the currently-displayed line still
+   triggers the scroll-to-existing path.
+
+3. *Sorted insert when seeking forward into new territory* —
+   =subtitleSentence().add()= scans existing =dl[data-vt]= rows and
+   inserts the new =<dl>= =beforebegin= the first row whose
+   =data-vt > ts=, falling back to =append= only when the new
+   subtitle is later than every existing one. The result: scrubbing
+   to an earlier point and watching forward inserts new rows in the
+   middle of the list at their correct chronological position.
+
+4. *Scroll target depends on mode* — =scroll(insertedDl)= and the
+   post-translation rAF in =autoTranslate()= now branch on
+   =window.__nstNonLinear=. In non-linear mode they
+   =insertedDl.scrollIntoView({block: 'center'})= so both the
+   original and (when it arrives) the translation are guaranteed
+   visible. In linear mode the original "snap to bottom when panel
+   is open" behavior is preserved.
+
+Also: each =captures= entry now carries a =dl= back-reference, set
+right after =add()= via a =data-vt=-based lookup; =autoTranslate=
+writes the translation into =entry.dl= rather than =dls[last]=, so
+sorted-inserted middle rows get their translation written into the
+correct row instead of overwriting the last visible row.
+
+Caveats:
+- =findExistingCapture= uses a ±3 s window. If you seek to a part of
+  a long-held subtitle (e.g. a 7-second song line) ~6 s past where it
+  was originally captured, dedup will miss and you'll get a
+  duplicate row at the seeked time. Widening the window would
+  conversely risk merging genuine repeats.
+- The progress-bar seek detector is heuristic: it watches
+  =currentTime= deltas. Very short seeks (<1.5 s) won't flip the
+  flag, but the panel UX is unchanged in that case (we were near
+  that subtitle anyway).
+- The non-linear flag auto-clears after ~1.5 s of monotonic
+  playback, so the panel reverts to "scroll to bottom" once you let
+  it play linearly again.
+
+* DONE there are now some bugs:
+
+1. the mouse is always in the dragging shape, will not allow clicking.
+2. mouse won't change into link/hand shape for clicking when moved onto the MM:SS
+
+Fixed in v1.14. Files touched: =content-script.js=, =style.css=,
+=manifest.json=.
+
+Root cause of bug 1 was =setPointerCapture()= introduced in v1.11: once
+the handle captures the pointer, *the capturing element's cursor
+applies everywhere on the page* until =releasePointerCapture()= runs.
+Any =pointerup= that didn't reach the handle (e.g. release happened
+over a Netflix overlay that called =stopPropagation=, or the focus
+left the window mid-drag) left the capture in place and the
+ew-resize cursor stuck globally — which on Netflix's player chrome
+masked the timestamp's =cursor:pointer= too (bug 2 was a symptom of
+bug 1, not an independent CSS problem).
+
+Rewrote =setupResize()= without pointer capture:
+- =mousedown= on the handle starts the drag, =mousemove= / =mouseup=
+  are listened on =window= in the *capture phase* (so Netflix
+  =stopPropagation= can't swallow them) plus a =window.blur= and
+  =document.mouseleave= belt-and-suspenders to end the drag if focus
+  leaves.
+- During drag, a transparent full-viewport =<div id="nst-drag-overlay">=
+  (=position:fixed; inset:0; z-index:2147483647; cursor:ew-resize=) is
+  appended; it shows the resize cursor globally without touching any
+  pointer-capture API. On =mouseup= the overlay is removed and the
+  cursor reverts immediately.
+- Body =cursor= is no longer mutated at all; the overlay alone owns
+  the drag-time cursor, so there's nothing to "leak" if cleanup is
+  missed (and if cleanup *is* missed, you just see a transparent div
+  — easier to notice and recover from than a stuck OS cursor).
+
+For bug 2, also hardened =.nst-ts= CSS: =cursor:pointer !important= on
+both rest and =:hover= states (defensive against any future inline-style
+override), plus a hover =text-decoration:underline= so the affordance is
+visible even before the cursor changes.
+
+* DONE No, you maybe made a mistake, the clicking on MM:SS dose not work at all, the mouse will change into drag immediately after a single click, and won't change back, and the whole panel will be in hovering color, that is wrong.
+
+Fixed in v1.15. File touched: =style.css= (+ =manifest.json= version
+bump).
+
+Real root cause was a CSS specificity bug, not the pointer-capture
+diagnosis from v1.14. =style.css= line 58 has
+=#translate-ext > * { width:20vw; min-width:300px; max-width:500px;
+overflow:auto; height:100vh; }=. That rule has the same specificity as
+=#translate-ext-resize-handle= (both are single-id, 1,0,0) AND comes
+*later* in the file, so it wins the cascade — the handle was being
+forced to =min-width:300px= and =height:100vh=, meaning the "thin
+8px drag strip" was actually a 300-500px column *covering the entire
+visible width of the panel*. The screenshot confirms it: the whole
+panel was tinted with =rgba(0,120,215,0.4)= (the
+=#translate-ext-resize-handle:hover= color). Every click anywhere on
+the panel hit the handle, fired =mousedown=, started a drag, and
+the cursor immediately became ew-resize — exactly what the user
+reported. The =cursor:pointer !important= on =.nst-ts= from v1.14
+was being overridden by the handle's =cursor:ew-resize= sitting on
+top of it in the z-order.
+
+Fix: added a more-specific rule that wins the cascade and pins the
+handle to 8px:
+
+#+begin_src css
+#translate-ext > #translate-ext-resize-handle{
+    width:8px !important;
+    min-width:0 !important;
+    max-width:8px !important;
+    overflow:visible !important;
+    height:100vh !important;
+}
+#+end_src
+
+The drag handler from v1.14 (window-level capture-phase mouse events
++ transparent full-viewport overlay) is unchanged and still correct
+for the *drag* phase; what's fixed here is that the *idle* state of
+the handle no longer steals the entire panel's pointer events.

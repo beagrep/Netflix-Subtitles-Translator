@@ -57,6 +57,14 @@ body:not(.open-tr-panel) #translate-ext-resize-handle{
 
 #translate-ext > * {width:20vw; min-width:300px; max-width:500px; overflow:auto; height:100vh; }
 
+#translate-ext > #translate-ext-resize-handle{
+	width:8px !important;
+	min-width:0 !important;
+	max-width:8px !important;
+	overflow:visible !important;
+	height:100vh !important;
+}
+
 
 #translate-ext #subtitle-wrap{line-height:1.5; max-height:90vh; box-shadow:inset 0px 0 20px rgba(0,0,0,.2);}
 #translate-ext > *::-webkit-scrollbar {
@@ -90,10 +98,13 @@ body:not(.open-tr-panel) #translate-ext-resize-handle{
 	margin-right:6px;
 	font-family:monospace;
 	user-select:none;
-	cursor:pointer;
+	cursor:pointer !important;
+	text-decoration:none;
 }
 #translate-ext #subtitle-wrap dl dt .nst-ts:hover{
 	color:#0078d7;
+	text-decoration:underline;
+	cursor:pointer !important;
 }
 #translate-ext #subtitle-wrap dl dt  span{transition:all .5s ease;  cursor:pointer;}
 #translate-ext #subtitle-wrap dl dt  span:hover{background:yellow; }
