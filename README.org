@@ -94,3 +94,136 @@ Caveats:
   the new value to take effect on subsequent subtitles (already-fetched
   translations are cached for that session).
 
+* DONE Update the plugin, so that
+
+1. When the panel is open, always auto scroll it to the botton.
+2. Allow to make the panel narrower/wider, use dragging.
+
+Implemented in v1.8. Files touched: =content-script.js=, =style.css=,
+=manifest.json=.
+
+1. *Auto-scroll when panel is open* — =subtitleSentence().scroll()= in
+   =content-script.js= now snaps =#subtitle-wrap.scrollTop = scrollHeight=
+   whenever =body.open-tr-panel= is set, instead of only nudging by 300px
+   near the bottom. The toggle handler (=request.buttonClick= in the
+   =onMessage= listener) also forces a scroll-to-bottom on the next frame
+   when the panel transitions from closed → open, so subtitles captured
+   while the panel was hidden are visible immediately.
+
+2. *Drag-to-resize* — =createTapeWrap()= injects a thin
+   =#translate-ext-resize-handle= div on the right edge of the panel
+   (=cursor:ew-resize=, hover-highlighted in =style.css=, hidden when the
+   panel is closed). =setupResize()= wires =mousedown=/=mousemove=/=mouseup=
+   on =document= to update width live via =applyPanelWidth(px)=, which
+   sets inline =width= / =maxWidth:none= on =#translate-ext= and its
+   direct children (overriding the original =max-width:800px= and the
+   child =min-width:300px / max-width:500px= CSS). It also rewrites
+   =.sizing-wrapper { width: calc(100vw - <panel>px) }= so the Netflix
+   player keeps shrinking past the original 80vw rule. Width is clamped
+   to [200, =window.innerWidth - 100=] and persisted to
+   =chrome.storage.sync= as =panelWidth=, so it's restored on next load
+   and synced across signed-in profiles.
+
+Caveats:
+- The width is applied via inline styles each call, so any Netflix-side
+  re-render of =.sizing-wrapper= (e.g. entering/leaving fullscreen) may
+  reset that one rule until the next drag; the panel itself keeps its
+  width because the inline style stays on =#translate-ext=.
+- Drag listeners are attached at module init; if the panel is ever
+  removed and re-created they will not auto-rebind (current code only
+  creates the panel once at load).
+
+* CANCELLED 3. When the panel is not open, show the translation above the original subtitle, use the same CSS. This one can be very difficult, you can try after
+CLOSED: [2026-06-07 Sun 18:40]
+:LOGBOOK:
+- State "CANCELLED"  from "TODO"       [2026-06-07 Sun 18:40]
+:END:
+
+* DONE When the translation is ready and inserted into the display, should also scroll to bottom.
+
+Implemented in v1.9 (=content-script.js=). =autoTranslate()= now, after
+writing the translation into the last =<dl>='s =<dd>=, calls
+=requestAnimationFrame(() => sw.scrollTop = sw.scrollHeight)= on
+=#subtitle-wrap= when =body.open-tr-panel= is set. The rAF defer is
+necessary because revealing the =dd= (it switches from =display:none= to
+visible via the =.sent-tr-open= class) grows layout in the same frame; we
+need to scroll after layout settles, otherwise we'd snap to the
+pre-growth height. The manual click-to-translate path
+(=translateSentence=) is intentionally left alone — clicking an existing
+entry shouldn't yank the viewport away from it.
+
+* DONE The subtitles should be timestamped with the video time, and all me to double click on each subtitle line to jump back into the video time.
+
+Implemented in v1.10. Files touched: =content-script.js=, =style.css=,
+=manifest.json=.
+
+- *Capture video time* — =readAndHandle()= calls =getVideoTime()=
+  (=document.querySelector('.VideoContainer video') || 'video'=) at the
+  moment a new subtitle is detected and stores it on the capture entry
+  (=videoTime=) and as a =data-vt= attribute on the rendered =<dl>=.
+- *Display* — =subtitleSentence().add(subtitle, videoTime)= prepends a
+  =<time class="nst-ts">M:SS</time>= (or =H:MM:SS= when ≥1h) inside the
+  =<dt>=, styled in =style.css= as small grey monospace.
+- *Double-click to seek* — =addClickListner()= adds a =dblclick= listener
+  to each =<dl>= that reads =data-vt= and calls =seekVideo(sec)= which
+  sets =video.currentTime=. =stopPropagation()= prevents the parent
+  click handler from triggering the click-to-translate flow on the same
+  gesture. The =title= attribute on the timestamp hints the gesture.
+- *Export* — =buildOrgExport()= now appends =[M:SS]= to each subtitle
+  heading, so the exported .org doc carries the playback timestamps too
+  (useful for re-finding a moment in the video).
+
+Caveats:
+- =video.currentTime= is the wall-clock position of the *current* frame
+  when the subtitle DOM appears. Netflix renders subtitles via React
+  updates that may lag the audio by ~100–300 ms, so seeking back may
+  land slightly after the line starts; for Anki review this is usually
+  close enough.
+- If Netflix's player has not yet hydrated the =<video>= element when a
+  subtitle arrives, =videoTime= will be =null= and that row has no
+  timestamp / no dblclick action.
+
+* DONE Note, the dragging is working, but the double clicking is not working.
+
+Please fix it. The mouse shape changed to dragging, even after I released the mouse button, and it's not coming back, and when I double click, nothing happens, the video does not jump to the subtitle's timestamp
+
+Fixed in v1.11. Files touched: =content-script.js=, =style.css=,
+=manifest.json=.
+
+Two root causes, two fixes:
+
+1. *Stuck ew-resize cursor after release* — the old code only set
+   =body.style.userSelect= during drag; the visual =ew-resize= cursor came
+   solely from the handle element's CSS. But while dragging the mouse
+   could leave the 8px-wide handle, and the =mouseup= listener on
+   =document= sometimes never fired (mouseup events get swallowed when
+   the cursor is over an iframe / Netflix-owned overlay). Rewrote
+   =setupResize()= to use *pointer events* with =setPointerCapture()=
+   on the handle, so all subsequent =pointermove= / =pointerup= are
+   guaranteed to reach the handle even outside its bounds. Also set
+   =body.style.cursor='ew-resize'= during drag so the cursor is
+   consistent the whole way, and explicitly clear it on =pointerup= /
+   =pointercancel=. Added a duplicate =pointerup= listener on
+   =document= as a belt-and-suspenders to release the drag if the
+   handle ever loses pointer capture.
+
+2. *Double-click not seeking* — the previous click handler was
+   indiscriminately routing every click on the =<dl>= to
+   =clickedWordORSent=, which treats a TIME-element target as a
+   sentence and calls =translateSentence(<time>)= on it (sending the
+   timestamp string to Google Translate, eating the gesture). The
+   dblclick handler was there but the preceding two click events on
+   the timestamp had already mutated state in a way that masked it
+   on the user's side. New behavior:
+   - Click on the timestamp =<time class="nst-ts">= seeks directly
+     (single-click, the more discoverable gesture) and never falls
+     through to the translation path.
+   - Double-click anywhere on the row still seeks (as originally
+     requested), via the row's =dblclick= listener.
+   - Click on a word/sentence elsewhere in the row still translates.
+   Added =LOG=s on =getVideoTime/seekVideo/dblclick/timestamp-click=
+   so future regressions are visible in the DevTools console.
+
+Also simplified =getVideoEl()= to just =document.querySelector('video')=
+(the =.VideoContainer video= compound was an over-specific guess that
+could miss on current Netflix DOM).

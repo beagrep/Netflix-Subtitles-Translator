@@ -36,6 +36,25 @@ opacity:1;
 
 #translate-ext{z-index:1000;position:absolute; box-shadow:10px 0 15px rgba(0,0,0,.5); max-width:800px;  height:100vh; overflow:hidden; background:white; color:#333; font-family:sans-serif!important;font-size:25px; }
 
+#translate-ext-resize-handle{
+	position:absolute;
+	top:0;
+	right:0;
+	width:8px;
+	height:100vh;
+	cursor:ew-resize;
+	z-index:5;
+	background:transparent;
+	transition:background 0.15s ease;
+}
+#translate-ext-resize-handle:hover,
+#translate-ext-resize-handle.nst-dragging{
+	background:rgba(0,120,215,0.4);
+}
+body:not(.open-tr-panel) #translate-ext-resize-handle{
+	display:none!important;
+}
+
 #translate-ext > * {width:20vw; min-width:300px; max-width:500px; overflow:auto; height:100vh; }
 
 
@@ -64,6 +83,18 @@ opacity:1;
 #translate-ext #subtitle-wrap dl:not(.sent-tr-open) dd{display:none;}
 
 #translate-ext #subtitle-wrap dl dt{font-size:85%; color:#222; }
+#translate-ext #subtitle-wrap dl dt .nst-ts{
+	display:inline-block;
+	font-size:75%;
+	color:#888;
+	margin-right:6px;
+	font-family:monospace;
+	user-select:none;
+	cursor:pointer;
+}
+#translate-ext #subtitle-wrap dl dt .nst-ts:hover{
+	color:#0078d7;
+}
 #translate-ext #subtitle-wrap dl dt  span{transition:all .5s ease;  cursor:pointer;}
 #translate-ext #subtitle-wrap dl dt  span:hover{background:yellow; }
 #translate-ext #subtitle-wrap dl dd{padding:0; margin:10px;}

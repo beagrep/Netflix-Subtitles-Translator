@@ -81,15 +81,20 @@
 	  frameDiv.id = config.mainWrap;
 	  document.body.appendChild(frameDiv);
 
+	  let resizeHandle = document.createElement('div');
+	  resizeHandle.id = 'translate-ext-resize-handle';
+	  resizeHandle.title = 'Drag to resize panel';
+	  frameDiv.appendChild(resizeHandle);
+
 	  let subDiv= document.createElement('div');
 	  subDiv.id = config.subtitleWrap;
 	  document.querySelector('#'+config.mainWrap).appendChild(subDiv);
-	  
-	  
+
+
 	  let wordDiv= document.createElement('div');
 	  wordDiv.id = config.translationWrap;
-	  document.querySelector('#'+config.mainWrap).appendChild(wordDiv); 
-	  
+	  document.querySelector('#'+config.mainWrap).appendChild(wordDiv);
+
 
 	  document.querySelector('#'+config.translationWrap).innerHTML =
 				  '<div id="'+config.closeRightPanel+'"></div><div class="tr-title"  id="'+config.dsecriptionTitle+'"></div>\n\
@@ -97,13 +102,82 @@
 				   <div class="tr-title" id="'+config.imgWrapTitle+'"></div> \n\
 				   <div id="'+config.imgWrap+'"></div>  \n\
 	  ';
-	  
+
 	  let centerTranslateDiv = document.createElement('div');
 	  centerTranslateDiv.id = config.mainTranslateId;
 	  document.body.appendChild(centerTranslateDiv);
-	  
+
+	  setupResize(frameDiv, resizeHandle);
+
 	}
 	createTapeWrap();
+
+	function applyPanelWidth(px) {
+		let frame = document.querySelector('#'+config.mainWrap);
+		if (!frame) return;
+		let min = 200, max = Math.max(min, window.innerWidth - 100);
+		if (px < min) px = min;
+		if (px > max) px = max;
+		frame.style.width = px + 'px';
+		frame.style.maxWidth = 'none';
+		frame.querySelectorAll(':scope > *').forEach(function(child){
+			if (child.id === 'translate-ext-resize-handle') return;
+			child.style.width = px + 'px';
+			child.style.minWidth = '0';
+			child.style.maxWidth = 'none';
+		});
+		try {
+			let sw = document.querySelector('.sizing-wrapper');
+			if (sw && document.body.classList.contains('open-tr-panel')) {
+				sw.style.width = 'calc(100vw - ' + px + 'px)';
+			}
+		} catch(e){}
+	}
+
+	function setupResize(frame, handle) {
+		try {
+			chrome.storage.sync.get({ panelWidth: 0 }, function(items){
+				if (items.panelWidth && items.panelWidth > 0) applyPanelWidth(items.panelWidth);
+			});
+		} catch(e){}
+
+		let dragging = false, startX = 0, startW = 0, pointerId = null;
+
+		function onDown(e){
+			dragging = true;
+			startX = e.clientX;
+			startW = frame.getBoundingClientRect().width;
+			pointerId = e.pointerId;
+			try { handle.setPointerCapture(e.pointerId); } catch(_){}
+			document.body.style.cursor = 'ew-resize';
+			document.body.style.userSelect = 'none';
+			handle.classList.add('nst-dragging');
+			e.preventDefault();
+			e.stopPropagation();
+		}
+		function onMove(e){
+			if (!dragging) return;
+			let dx = e.clientX - startX;
+			applyPanelWidth(startW + dx);
+		}
+		function onUp(e){
+			if (!dragging) return;
+			dragging = false;
+			try { if (pointerId !== null) handle.releasePointerCapture(pointerId); } catch(_){}
+			pointerId = null;
+			document.body.style.cursor = '';
+			document.body.style.userSelect = '';
+			handle.classList.remove('nst-dragging');
+			let w = Math.round(frame.getBoundingClientRect().width);
+			try { chrome.storage.sync.set({ panelWidth: w }); } catch(_){}
+		}
+
+		handle.addEventListener('pointerdown', onDown);
+		handle.addEventListener('pointermove', onMove);
+		handle.addEventListener('pointerup', onUp);
+		handle.addEventListener('pointercancel', onUp);
+		document.addEventListener('pointerup', onUp);
+	}
 
 
 	function loadJson(url, calback){
@@ -135,13 +209,45 @@
 
 
 
+	function fmtTime(sec) {
+		if (typeof sec !== 'number' || !isFinite(sec) || sec < 0) return '';
+		sec = Math.floor(sec);
+		let h = Math.floor(sec / 3600);
+		let m = Math.floor((sec % 3600) / 60);
+		let s = sec % 60;
+		let pad = function(n){ return n < 10 ? '0'+n : ''+n; };
+		return (h > 0 ? h + ':' + pad(m) : m) + ':' + pad(s);
+	}
+
+	function getVideoEl() {
+		let v = document.querySelector('video');
+		return v || null;
+	}
+
+	function getVideoTime() {
+		let v = getVideoEl();
+		let t = v ? v.currentTime : null;
+		LOG('getVideoTime ->', t, 'videoEl=', !!v);
+		return t;
+	}
+
+	function seekVideo(sec) {
+		let v = getVideoEl();
+		LOG('seekVideo:', sec, 'videoEl=', !!v);
+		if (!v || typeof sec !== 'number' || !isFinite(sec)) return false;
+		try { v.currentTime = sec; LOG('seekVideo OK, currentTime now=', v.currentTime); return true; } catch(e){ WARN('seekVideo failed:', e && e.message); return false; }
+	}
+
 	function subtitleSentence(){
 		let self;
 		return{
-			add:function(subtitle){
+			add:function(subtitle, videoTime){
+				let ts = (typeof videoTime === 'number' && isFinite(videoTime)) ? videoTime : null;
+				let tsAttr = ts !== null ? ' data-vt="'+ts.toFixed(3)+'"' : '';
+				let tsLabel = ts !== null ? '<time class="nst-ts" title="Click (or double-click the line) to jump to '+fmtTime(ts)+'">'+fmtTime(ts)+'</time> ' : '';
 				document
 				.querySelector('#'+config.mainWrap+' #'+config.subtitleWrap)
-				.insertAdjacentHTML('beforeend', "<dl><dt>"+subtitle.replace(/([a-z'\-]+)/gi, '<span>$1</span>')+"</dt><dd></dd></dl>");
+				.insertAdjacentHTML('beforeend', "<dl"+tsAttr+">"+"<dt>"+tsLabel+subtitle.replace(/([a-z'\-]+)/gi, '<span>$1</span>')+"</dt><dd></dd></dl>");
 
 				self = this;
 				self.scroll();
@@ -149,14 +255,37 @@
 			},
 			scroll:function(){
 				let elm = document.querySelector('#'+config.mainWrap+' #'+config.subtitleWrap);
-				if(elm.offsetHeight + elm.scrollTop + 150 > elm.scrollHeight){
+				if (!elm) return;
+				if (document.body.classList.contains('open-tr-panel')) {
+					elm.scrollTop = elm.scrollHeight;
+				} else if (elm.offsetHeight + elm.scrollTop + 150 > elm.scrollHeight) {
 					elm.scrollBy(0, 300);
 				}
-
 			},
 			addClickListner:function(){
 				let nodes = document.querySelectorAll('#'+config.mainWrap+' #'+config.subtitleWrap +" dl");
-				nodes[nodes.length- 1].addEventListener('click', self.clickedWordORSent);
+				let last = nodes[nodes.length- 1];
+				last.addEventListener('click', function(e){
+					if (e.target && (e.target.tagName === 'TIME' || (e.target.classList && e.target.classList.contains('nst-ts')))) {
+						let dl = e.target.closest('dl');
+						let vt = dl ? parseFloat(dl.getAttribute('data-vt')) : NaN;
+						LOG('timestamp click vt=', vt);
+						if (!isNaN(vt)) { e.preventDefault(); e.stopPropagation(); seekVideo(vt); }
+						return;
+					}
+					self.clickedWordORSent(e);
+				});
+				last.addEventListener('dblclick', function(e){
+					let dl = e.target.closest('dl');
+					if (!dl) return;
+					let vt = parseFloat(dl.getAttribute('data-vt'));
+					LOG('dblclick vt=', vt, 'target=', e.target && e.target.tagName);
+					if (!isNaN(vt)) {
+						e.preventDefault();
+						e.stopPropagation();
+						seekVideo(vt);
+					}
+				});
 			},
 			clickedWordORSent:function(event){
 						
@@ -418,7 +547,8 @@
 		header += '#+SUBTITLE_COUNT: ' + captures.length + '\n\n';
 
 		let body = captures.map(function(c){
-			return '* ' + escOrgHeading(c.original) + '\n\n' + (c.translation || '') + '\n';
+			let vt = (typeof c.videoTime === 'number' && isFinite(c.videoTime)) ? ' [' + fmtTime(c.videoTime) + ']' : '';
+			return '* ' + escOrgHeading(c.original) + vt + '\n\n' + (c.translation || '') + '\n';
 		}).join('\n');
 
 		return header + body;
@@ -500,6 +630,10 @@
 						let dd = last.querySelector('dd');
 						if (dd) dd.textContent = gtrans;
 					}
+					let sw = document.querySelector('#'+config.mainWrap+' #'+config.subtitleWrap);
+					if (sw && document.body.classList.contains('open-tr-panel')) {
+						requestAnimationFrame(function(){ sw.scrollTop = sw.scrollHeight; });
+					}
 				});
 			}
 
@@ -512,10 +646,11 @@
 					if (!subtitle || subtitle === subtitleBefore) return;
 
 					LOG('subtitle:', subtitle);
-					let entry = { original: subtitle, translation: '', ts: Date.now() };
+					let vt = getVideoTime();
+					let entry = { original: subtitle, translation: '', ts: Date.now(), videoTime: vt };
 					captures.push(entry);
 					centerTranslator().init(subtitle);
-					subtitleSentence().add(subtitle);
+					subtitleSentence().add(subtitle, vt);
 					subtitleBefore = subtitle;
 					autoTranslate(subtitle, entry);
 				}, 100);
@@ -569,7 +704,17 @@ chrome.runtime.onMessage.addListener(
 				return false
 			}
 			let bdclist = document.querySelector('body').classList;
-			(bdclist.contains('open-tr-panel')) ? bdclist.remove('open-tr-panel') : bdclist.add('open-tr-panel');
+			if (bdclist.contains('open-tr-panel')) {
+				bdclist.remove('open-tr-panel');
+			} else {
+				bdclist.add('open-tr-panel');
+				try {
+					let sw = document.querySelector('#translate-ext #subtitle-wrap');
+					if (sw) {
+						requestAnimationFrame(function(){ sw.scrollTop = sw.scrollHeight; });
+					}
+				} catch(e){}
+			}
 
 	}
 
