@@ -589,27 +589,6 @@
 		}, 500);
 	})();
 
-	function getSubtitleWrap() {
-		return document.querySelector('#'+config.mainWrap+' #'+config.subtitleWrap);
-	}
-
-	function setCurrentSubtitleDl(dl) {
-		try {
-			let wrap = getSubtitleWrap();
-			if (!wrap) return;
-			let prev = wrap.querySelectorAll('dl.nst-current');
-			prev.forEach(function(p){ if (p !== dl) p.classList.remove('nst-current'); });
-			if (dl) dl.classList.add('nst-current');
-		} catch(e){}
-	}
-
-	function scrollSubtitleDlIntoView(dl) {
-		let wrap = getSubtitleWrap();
-		if (!wrap || !dl || !document.body.classList.contains('open-tr-panel')) return;
-		try { dl.scrollIntoView({ block: 'center' }); } catch(_) {
-			wrap.scrollTop = Math.max(0, dl.offsetTop - wrap.clientHeight/2);
-		}
-	}
 
 	function subtitleSentence(){
 		let self;
@@ -679,13 +658,7 @@
 						let dl = e.target.closest('dl');
 						let vt = dl ? parseFloat(dl.getAttribute('data-vt')) : NaN;
 						LOG('timestamp click vt=', vt);
-						if (!isNaN(vt)) {
-							e.preventDefault();
-							e.stopPropagation();
-							setCurrentSubtitleDl(dl);
-							scrollSubtitleDlIntoView(dl);
-							seekVideo(vt);
-						}
+						if (!isNaN(vt)) { e.preventDefault(); e.stopPropagation(); seekVideo(vt); }
 						return;
 					}
 					self.clickedWordORSent(e);
@@ -698,8 +671,6 @@
 					if (!isNaN(vt)) {
 						e.preventDefault();
 						e.stopPropagation();
-						setCurrentSubtitleDl(dl);
-						scrollSubtitleDlIntoView(dl);
 						seekVideo(vt);
 					}
 				});
@@ -1196,7 +1167,13 @@
 			}
 
 			function setCurrent(dl) {
-				setCurrentSubtitleDl(dl);
+				try {
+					let wrap = document.querySelector('#'+config.mainWrap+' #'+config.subtitleWrap);
+					if (!wrap) return;
+					let prev = wrap.querySelectorAll('dl.nst-current');
+					prev.forEach(function(p){ if (p !== dl) p.classList.remove('nst-current'); });
+					if (dl) dl.classList.add('nst-current');
+				} catch(e){}
 			}
 
 			function readAndHandle() {
