@@ -649,3 +649,61 @@ This collapses the two prior branches into a single rule that is
 also more obviously correct: "show me the row I just touched, unless
 it's the bottom row in which case bottom-snap and inserted-snap are
 equivalent."
+
+** DONE my current subtitle highlight is very quick to be gone, please make it stay until the next subtitle is active.
+
+Fixed in v1.19 (=content-script.js= only, =manifest.json= version bump).
+
+Root cause: =readAndHandle()= called =setCurrent(null)= whenever
+=extractSubtitle()= returned empty. Netflix subtitle DOM often has a
+brief empty gap between two active subtitles, so the highlight was
+cleared during that gap and only restored when the next line arrived.
+
+Fix: empty subtitle frames now simply return without changing
+=.nst-current=. The highlighted row stays active until a real next
+subtitle is observed, at which point the existing insert/dedup path
+calls =setCurrent(nextDl)= and moves the highlight.
+
+** DONE When I click the MM:SS timestamp, jump to it and CONTINUE PLAYING.
+
+Currently, if the movie is paused, after you jump, the playing won't continue, which is wrong, I think. Please continue.
+
+Fixed in v1.20 (=content-script.js= only, =manifest.json= version bump).
+
+The timestamp/double-click path still sends the seek through the
+injected Netflix player bridge, but the posted message now includes
+=play:true=. The page-context bridge does:
+
+1. =p.seek(Math.round(sec * 1000))= via Netflix's player API.
+2. 150 ms later, tries to resume playback using the first available
+   method among =p.play()=, =p.unpause()=, =p.resume()=, then falls
+   back to =document.querySelector('video').play()=.
+
+The delay gives Netflix a moment to apply the seek before the play
+request, avoiding the race where a play call immediately before/inside
+the seek can be swallowed by the player state transition. DevTools now
+logs both =[NST] seek-result= and =[NST] seek-play-result= so we can
+see which resume path worked on the current Netflix build.
+
+** DONE The highlighting and jumping to the active subtitle is gone after this fix, please check and fix it.
+
+Fixed in v1.21 (=content-script.js= only, =manifest.json= version bump).
+
+Root cause: after v1.20, timestamp/double-click seek immediately asked
+Netflix to seek *and* resume playback, but the side-panel current-row
+state still depended on Netflix's subtitle DOM updating after the seek.
+That update can be delayed or skipped during the player state
+transition, so the clicked row was not reliably marked =.nst-current=
+or centered in the panel.
+
+Fix: timestamp click and row double-click now update the side panel
+synchronously before sending the seek request: =setCurrentSubtitleDl(dl)=
+adds =.nst-current= to the clicked row and clears it from any previous
+row, and =scrollSubtitleDlIntoView(dl)= centers it immediately. Then
+=seekVideo(vt)= performs the Netflix seek+play. Later live subtitle DOM
+updates still go through the existing dedup/insert path and move the
+highlight normally as playback continues.
+
+Also factored the current-row helpers out of =run()= so both the
+click handlers and the live subtitle detector use the same
+implementation.

@@ -498,18 +498,37 @@
 					} catch(e){}
 					return null;
 				}
+				function playPlayer(p){
+					try {
+						if (p && typeof p.play === 'function') { p.play(); return 'player.play'; }
+						if (p && typeof p.unpause === 'function') { p.unpause(); return 'player.unpause'; }
+						if (p && typeof p.resume === 'function') { p.resume(); return 'player.resume'; }
+					} catch(e){}
+					try {
+						var v = document.querySelector('video');
+						if (v && typeof v.play === 'function') { v.play(); return 'video.play'; }
+					} catch(e){}
+					return 'none';
+				}
 				window.addEventListener('message', function(ev){
 					if (!ev.data || ev.data.__nst !== 'seek') return;
 					var sec = ev.data.sec;
+					var shouldPlay = !!ev.data.play;
 					var p = findPlayer();
-					var ok = false, via = 'none', err = '';
+					var ok = false, via = 'none', playVia = 'none', err = '';
 					try {
 						if (p && typeof p.seek === 'function') {
 							p.seek(Math.round(sec * 1000));
 							ok = true; via = 'player.seek';
+							if (shouldPlay) {
+								setTimeout(function(){
+									var pv = playPlayer(p);
+									window.postMessage({ __nst: 'seek-play-result', via: pv, sec: sec }, '*');
+								}, 150);
+							}
 						}
 					} catch(e){ err = String(e && e.message || e); }
-					window.postMessage({ __nst: 'seek-result', ok: ok, via: via, err: err, sec: sec }, '*');
+					window.postMessage({ __nst: 'seek-result', ok: ok, via: via, playVia: playVia, err: err, sec: sec, play: shouldPlay }, '*');
 				});
 			}.toString() + ')();';
 			(document.head || document.documentElement).appendChild(s);
@@ -519,15 +538,16 @@
 	injectNetflixSeekBridge();
 
 	window.addEventListener('message', function(ev){
-		if (ev.source !== window || !ev.data || ev.data.__nst !== 'seek-result') return;
-		LOG('seek-result:', ev.data);
+		if (ev.source !== window || !ev.data) return;
+		if (ev.data.__nst === 'seek-result') LOG('seek-result:', ev.data);
+		if (ev.data.__nst === 'seek-play-result') LOG('seek-play-result:', ev.data);
 	});
 
 	function seekVideo(sec) {
 		if (typeof sec !== 'number' || !isFinite(sec)) return false;
-		LOG('seekVideo:', sec, '(via Netflix player API)');
+		LOG('seekVideo:', sec, '(via Netflix player API + play)');
 		try {
-			window.postMessage({ __nst: 'seek', sec: sec }, '*');
+			window.postMessage({ __nst: 'seek', sec: sec, play: true }, '*');
 			window.__nstNonLinear = true;
 			window.__nstLastSeekAt = Date.now();
 			return true;
@@ -568,6 +588,28 @@
 			}
 		}, 500);
 	})();
+
+	function getSubtitleWrap() {
+		return document.querySelector('#'+config.mainWrap+' #'+config.subtitleWrap);
+	}
+
+	function setCurrentSubtitleDl(dl) {
+		try {
+			let wrap = getSubtitleWrap();
+			if (!wrap) return;
+			let prev = wrap.querySelectorAll('dl.nst-current');
+			prev.forEach(function(p){ if (p !== dl) p.classList.remove('nst-current'); });
+			if (dl) dl.classList.add('nst-current');
+		} catch(e){}
+	}
+
+	function scrollSubtitleDlIntoView(dl) {
+		let wrap = getSubtitleWrap();
+		if (!wrap || !dl || !document.body.classList.contains('open-tr-panel')) return;
+		try { dl.scrollIntoView({ block: 'center' }); } catch(_) {
+			wrap.scrollTop = Math.max(0, dl.offsetTop - wrap.clientHeight/2);
+		}
+	}
 
 	function subtitleSentence(){
 		let self;
@@ -637,7 +679,13 @@
 						let dl = e.target.closest('dl');
 						let vt = dl ? parseFloat(dl.getAttribute('data-vt')) : NaN;
 						LOG('timestamp click vt=', vt);
-						if (!isNaN(vt)) { e.preventDefault(); e.stopPropagation(); seekVideo(vt); }
+						if (!isNaN(vt)) {
+							e.preventDefault();
+							e.stopPropagation();
+							setCurrentSubtitleDl(dl);
+							scrollSubtitleDlIntoView(dl);
+							seekVideo(vt);
+						}
 						return;
 					}
 					self.clickedWordORSent(e);
@@ -650,6 +698,8 @@
 					if (!isNaN(vt)) {
 						e.preventDefault();
 						e.stopPropagation();
+						setCurrentSubtitleDl(dl);
+						scrollSubtitleDlIntoView(dl);
 						seekVideo(vt);
 					}
 				});
@@ -1146,13 +1196,7 @@
 			}
 
 			function setCurrent(dl) {
-				try {
-					let wrap = document.querySelector('#'+config.mainWrap+' #'+config.subtitleWrap);
-					if (!wrap) return;
-					let prev = wrap.querySelectorAll('dl.nst-current');
-					prev.forEach(function(p){ if (p !== dl) p.classList.remove('nst-current'); });
-					if (dl) dl.classList.add('nst-current');
-				} catch(e){}
+				setCurrentSubtitleDl(dl);
 			}
 
 			function readAndHandle() {
@@ -1161,10 +1205,7 @@
 				setTimeout(function(){
 					wait = false;
 					let subtitle = extractSubtitle();
-					if (!subtitle) {
-						setCurrent(null);
-						return;
-					}
+					if (!subtitle) return;
 					if (subtitle === subtitleBefore && !window.__nstNonLinear) return;
 
 					LOG('subtitle:', subtitle);
