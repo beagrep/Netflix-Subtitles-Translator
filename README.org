@@ -740,3 +740,18 @@ Refactored the monolithic =content-script.js= into a modular structure under =sr
 - =main.js= - Main loop, polling, ties all modules together
 
 Manifest updated to load modules in correct dependency order (v1.25).
+
+** DONE When the original subtitle has multiple lines, in the panel, hope you also display them as multiple lines, not on to the same line
+
+Implemented in v1.26-v1.28:
+- Modified =extractSubtitle()= to join lines with =\\n= instead of spaces, preserving original line breaks
+- Modified =add()= in subtitles UI to split by newlines, process each line for word translation, then join with =<br>= tags for display
+- Modified =applyTranslation()= to also preserve line breaks in translated text
+- Added =normalizeForTranslate()= in config.js to convert newlines to spaces when sending to Google Translate API (for better translation results)
+- Completely rewrote subtitle extraction in v1.27 with multiple strategies:
+  - Look for explicit =<br>= tags first
+  - Look for direct child elements that might be separate lines
+  - Group text by vertical position in DOM
+  - Fallback to pattern matching for speaker tags like =[로기]= / =[터그]=
+  - Added debug logging to help diagnose issues
+- v1.28: Added multi-line translation support - translate each line separately and preserve line breaks in the output

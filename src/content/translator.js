@@ -92,6 +92,7 @@
 
   /**
    * Auto-translate a subtitle, using cache first
+   * Handles multi-line subtitles by translating each line separately
    */
   function autoTranslate(sentence, capture, doneCallback) {
     if (!sentence) { if (doneCallback) doneCallback(); return; }
@@ -100,14 +101,82 @@
     const tgt = config.user.lang || 'en';
     const done = function() { if (doneCallback) try { doneCallback(); } catch(e){} };
 
-    // Try cache first
+    // Split into lines
+    const lines = sentence.split(/\r?\n/).filter(function(l) { return l.trim(); });
+
+    // If only one line, use the simple path
+    if (lines.length <= 1) {
+      // Try cache first
+      transCacheGet(src, tgt, sentence, function(cached) {
+        if (cached) {
+          LOG('auto-translate (cached):', cached);
+          applyTranslation(capture.dl, cached, capture);
+          capture.status = 'ok';
+
+          // Also record to subtitles table if we have video context
+          const videoId = NST.netflix && NST.netflix.player ? NST.netflix.player.getNetflixVideoId() : null;
+          if (videoId && db && typeof capture.videoTime === 'number') {
+            db.recordSubtitle(videoId, capture.videoTime, capture.original, cached, 'ok');
+          }
+          return done();
+        }
+
+        // Not in cache - fetch from Google
+        const videoId = NST.netflix && NST.netflix.player ? NST.netflix.player.getNetflixVideoId() : null;
+        if (videoId && db && typeof capture.videoTime === 'number' && !capture.preloaded) {
+          db.recordSubtitle(videoId, capture.videoTime, capture.original, null, 'pending');
+        }
+
+        loadJson(gtansUrl(sentence), function(data) {
+          if (!data) {
+            if (videoId && db && typeof capture.videoTime === 'number') {
+              db.recordSubtitle(videoId, capture.videoTime, capture.original, null, 'failed');
+            }
+            return done();
+          }
+
+          let gtrans = '';
+          try {
+            data['sentences'].forEach(function(seg) { gtrans += seg.trans + ' '; });
+          } catch(e) {
+            if (videoId && db && typeof capture.videoTime === 'number') {
+              db.recordSubtitle(videoId, capture.videoTime, capture.original, null, 'failed');
+            }
+            return done();
+          }
+
+          gtrans = gtrans.trim();
+          if (!gtrans) {
+            if (videoId && db && typeof capture.videoTime === 'number') {
+              db.recordSubtitle(videoId, capture.videoTime, capture.original, null, 'failed');
+            }
+            return done();
+          }
+
+          LOG('auto-translate:', gtrans);
+          transCacheSet(src, tgt, sentence, gtrans);
+          capture.status = 'ok';
+
+          if (videoId && db && typeof capture.videoTime === 'number') {
+            db.recordSubtitle(videoId, capture.videoTime, capture.original, gtrans, 'ok');
+          }
+
+          applyTranslation(capture.dl, gtrans, capture);
+          done();
+        });
+      });
+      return;
+    }
+
+    // Multi-line: translate each line separately
+    LOG('auto-translate: handling', lines.length, 'lines separately');
+
+    // Check cache for the whole thing first
     transCacheGet(src, tgt, sentence, function(cached) {
       if (cached) {
         LOG('auto-translate (cached):', cached);
         applyTranslation(capture.dl, cached, capture);
         capture.status = 'ok';
-
-        // Also record to subtitles table if we have video context
         const videoId = NST.netflix && NST.netflix.player ? NST.netflix.player.getNetflixVideoId() : null;
         if (videoId && db && typeof capture.videoTime === 'number') {
           db.recordSubtitle(videoId, capture.videoTime, capture.original, cached, 'ok');
@@ -115,49 +184,75 @@
         return done();
       }
 
-      // Not in cache - fetch from Google
+      // Not in cache - translate line by line
       const videoId = NST.netflix && NST.netflix.player ? NST.netflix.player.getNetflixVideoId() : null;
       if (videoId && db && typeof capture.videoTime === 'number' && !capture.preloaded) {
         db.recordSubtitle(videoId, capture.videoTime, capture.original, null, 'pending');
       }
 
-      loadJson(gtansUrl(sentence), function(data) {
-        if (!data) {
+      const translatedLines = [];
+      let completed = 0;
+      let hasError = false;
+
+      // Translate each line
+      lines.forEach(function(line, index) {
+        // Check cache for individual line first
+        transCacheGet(src, tgt, line, function(cachedLine) {
+          if (cachedLine) {
+            translatedLines[index] = cachedLine;
+            checkDone();
+          } else {
+            // Fetch from Google for this line
+            loadJson(gtansUrl(line), function(data) {
+              if (!data) {
+                hasError = true;
+                translatedLines[index] = line; // Fallback to original
+              } else {
+                let lineTrans = '';
+                try {
+                  data['sentences'].forEach(function(seg) { lineTrans += seg.trans + ' '; });
+                  lineTrans = lineTrans.trim();
+                } catch(e) {
+                  lineTrans = line;
+                }
+                translatedLines[index] = lineTrans;
+                // Cache the individual line
+                if (lineTrans) {
+                  transCacheSet(src, tgt, line, lineTrans);
+                }
+              }
+              checkDone();
+            });
+          }
+        });
+      });
+
+      function checkDone() {
+        completed++;
+        if (completed < lines.length) return;
+
+        // Join the translated lines with newlines
+        const finalTrans = translatedLines.join('\n');
+
+        if (!finalTrans || hasError) {
           if (videoId && db && typeof capture.videoTime === 'number') {
-            db.recordSubtitle(videoId, capture.videoTime, capture.original, null, 'failed');
+            db.recordSubtitle(videoId, capture.videoTime, capture.original, finalTrans || null, hasError ? 'failed' : 'ok');
           }
           return done();
         }
 
-        let gtrans = '';
-        try {
-          data['sentences'].forEach(function(seg) { gtrans += seg.trans + ' '; });
-        } catch(e) {
-          if (videoId && db && typeof capture.videoTime === 'number') {
-            db.recordSubtitle(videoId, capture.videoTime, capture.original, null, 'failed');
-          }
-          return done();
-        }
-
-        gtrans = gtrans.trim();
-        if (!gtrans) {
-          if (videoId && db && typeof capture.videoTime === 'number') {
-            db.recordSubtitle(videoId, capture.videoTime, capture.original, null, 'failed');
-          }
-          return done();
-        }
-
-        LOG('auto-translate:', gtrans);
-        transCacheSet(src, tgt, sentence, gtrans);
+        LOG('auto-translate (multi-line):', finalTrans);
+        // Cache the whole thing too
+        transCacheSet(src, tgt, sentence, finalTrans);
         capture.status = 'ok';
 
         if (videoId && db && typeof capture.videoTime === 'number') {
-          db.recordSubtitle(videoId, capture.videoTime, capture.original, gtrans, 'ok');
+          db.recordSubtitle(videoId, capture.videoTime, capture.original, finalTrans, 'ok');
         }
 
-        applyTranslation(capture.dl, gtrans, capture);
+        applyTranslation(capture.dl, finalTrans, capture);
         done();
-      });
+      }
     });
   }
 

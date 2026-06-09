@@ -95,6 +95,13 @@
   }
 
   /**
+   * Process a subtitle line to wrap words in spans for translation
+   */
+  function processLineForDisplay(line) {
+    return line.replace(/([a-z'\-]+)/gi, '<span>$1</span>');
+  }
+
+  /**
    * Add a subtitle to the panel
    */
   function add(subtitle, videoTime) {
@@ -103,8 +110,13 @@
     const tsAttr = ts !== null ? ' data-vt="' + ts.toFixed(3) + '"' : '';
     const tsLabel = ts !== null ? '<time class="nst-ts" title="Click (or double-click the line) to jump to ' + fmtTime(ts) + '">' + fmtTime(ts) + '</time> ' : '';
 
+    // Split subtitle by newlines and process each line, then join with <br>
+    const lines = subtitle.split(/\r?\n/);
+    const processedLines = lines.map(processLineForDisplay);
+    const displaySubtitle = processedLines.join('<br>');
+
     const html = '<dl' + tsAttr + '>' +
-      '<dt>' + tsLabel + subtitle.replace(/([a-z'\-]+)/gi, '<span>$1</span>') + '</dt>' +
+      '<dt>' + tsLabel + displaySubtitle + '</dt>' +
       '<dd></dd>' +
       '</dl>';
 
@@ -151,7 +163,10 @@
     if (dl) {
       dl.classList.add(S.translatedSentence);
       const dd = dl.querySelector('dd');
-      if (dd) dd.textContent = translation;
+      if (dd && typeof translation === 'string') {
+        // Preserve line breaks in translation
+        dd.innerHTML = translation.replace(/\r?\n/g, '<br>');
+      }
     }
 
     const sw = getSubtitleWrap();
@@ -256,23 +271,60 @@
   function translateSentence(el) {
     const S = config.SELECTORS;
 
-    let sentence = el.textContent.toLowerCase();
-    if (sentence === '') return;
-
     if (el.nodeName !== 'DL') while ((el = el.parentElement) && el.nodeName !== 'DL');
     if (!el) return;
     if (el.classList.contains(S.translatedSentence)) return;
 
+    // Get the original sentence from the dt element
+    const dt = el.querySelector('dt');
+    if (!dt) return;
+
+    // Extract the text (remove timestamp first if present)
+    let sentence = dt.textContent || '';
+    // Remove the leading timestamp like "6:08 " if present
+    sentence = sentence.replace(/^\d+:\d+\s*/, '').trim();
+
+    if (sentence === '') return;
+
     el.classList.add(S.translatedSentence);
 
-    if (NST.utils && NST.config) {
-      NST.utils.loadJson(NST.config.gtansUrl(sentence), function(data) {
-        if (!data) return;
-        let gtrans = '';
-        data['sentences'].forEach(function(s) { gtrans += s.trans + ' '; });
-        el.querySelector('dd').textContent = gtrans;
-      });
+    // If multi-line, split and translate each line separately
+    const lines = sentence.split(/\r?\n/).filter(function(l) { return l.trim(); });
+
+    if (lines.length <= 1 || !NST.utils || !NST.config) {
+      // Single line or no utilities - simple path
+      if (NST.utils && NST.config) {
+        NST.utils.loadJson(NST.config.gtansUrl(sentence), function(data) {
+          if (!data) return;
+          let gtrans = '';
+          data['sentences'].forEach(function(s) { gtrans += s.trans + ' '; });
+          const dd = el.querySelector('dd');
+          if (dd) dd.innerHTML = gtrans.trim().replace(/\r?\n/g, '<br>');
+        });
+      }
+      return;
     }
+
+    // Multi-line: translate each line
+    const translatedLines = [];
+    let completed = 0;
+
+    lines.forEach(function(line, index) {
+      NST.utils.loadJson(NST.config.gtansUrl(line), function(data) {
+        if (!data) {
+          translatedLines[index] = line;
+        } else {
+          let gtrans = '';
+          data['sentences'].forEach(function(s) { gtrans += s.trans + ' '; });
+          translatedLines[index] = gtrans.trim();
+        }
+        completed++;
+        if (completed === lines.length) {
+          const dd = el.querySelector('dd');
+          if (dd) dd.innerHTML = translatedLines.join('<br>');
+        }
+      });
+    });
   }
 
   /**

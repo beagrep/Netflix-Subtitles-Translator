@@ -46,13 +46,20 @@
   };
 
   /**
+   * Normalize text for translation - replace newlines with spaces
+   */
+  function normalizeForTranslate(text) {
+    return (text || '').replace(/\r?\n/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+
+  /**
    * Build Google Translate URL for full sentence translation
    */
   function gtansUrl(text) {
     return API_BASES.gtansBase +
       '&sl=' + encodeURIComponent(config.user.srcLang || 'auto') +
       '&tl=' + encodeURIComponent(config.user.lang || 'en') +
-      '&q=' + encodeURIComponent(text);
+      '&q=' + encodeURIComponent(normalizeForTranslate(text));
   }
 
   /**
@@ -62,7 +69,7 @@
     return API_BASES.ftranBase +
       '&sl=' + encodeURIComponent(config.user.srcLang || 'auto') +
       '&tl=' + encodeURIComponent(config.user.lang || 'en') +
-      '&q=' + encodeURIComponent(text);
+      '&q=' + encodeURIComponent(normalizeForTranslate(text));
   }
 
   /**
