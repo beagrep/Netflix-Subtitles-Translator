@@ -419,6 +419,29 @@
 			});
 		}
 
+		function clearVideoSubtitles(videoId, cb) {
+			whenReady(function(){
+				try {
+					// Delete subtitles for this video
+					let stmt = db.prepare('DELETE FROM subtitles WHERE video_id=?');
+					stmt.bind([videoId]);
+					stmt.step();
+					stmt.free();
+					// Also delete the video entry
+					stmt = db.prepare('DELETE FROM videos WHERE video_id=?');
+					stmt.bind([videoId]);
+					stmt.step();
+					stmt.free();
+					scheduleSave();
+					LOG('nstDB cleared subtitles for video:', videoId);
+					if (cb) cb({ ok: true });
+				} catch(e) {
+					WARN('clearVideoSubtitles:', e && e.message);
+					if (cb) cb({ ok: false, error: e && e.message });
+				}
+			});
+		}
+
 		init();
 
 		return {
@@ -428,6 +451,7 @@
 			upsertVideo: upsertVideo,
 			recordSubtitle: recordSubtitle,
 			loadVideoSubtitles: loadVideoSubtitles,
+			clearVideoSubtitles: clearVideoSubtitles,
 			scheduleSave: scheduleSave
 		};
 	})();
@@ -966,6 +990,39 @@
 	window.__nstExportOrg = exportOrg;
 	window.__nstCaptures = captures;
 
+	// Expose clear function for the popup
+	window.__nstClearSubtitleDB = function(callback) {
+		try {
+			if(!window.location.href.match(/.+:\/\/.+netflix\.com\/watch\//)){
+				callback({ ok: false, error: 'Open a Netflix watch page first.' });
+				return;
+			}
+			let videoId = getNetflixVideoId();
+			if (!videoId) {
+				callback({ ok: false, error: 'Could not get Netflix video ID.' });
+				return;
+			}
+			// Count how many we're about to delete
+			let countBefore = captures.length;
+			// Clear in-memory captures
+			captures = [];
+			// Clear the panel
+			let wrap = document.querySelector('#'+config.mainWrap+' #'+config.subtitleWrap);
+			if (wrap) wrap.innerHTML = '';
+			// Also clear our Netflix subtitle modifications if available
+			if (typeof clearNetflixSubtitleModifications === 'function') {
+				clearNetflixSubtitleModifications();
+			}
+			// Clear from DB (async)
+			nstDB.clearVideoSubtitles(videoId, function(result) {
+				result.count = countBefore;
+				callback(result);
+			});
+		} catch(e) {
+			callback({ ok: false, error: 'Clear error: ' + (e && e.message) });
+		}
+	};
+
 
 	function run(item){
 
@@ -1291,6 +1348,20 @@ chrome.runtime.onMessage.addListener(
 			sendResponse(result);
 		} catch(e) {
 			sendResponse({ ok: false, error: 'Export error: ' + (e && e.message) });
+		}
+		return true;
+	}
+
+	if(request.clearSubtitleDB){
+		try {
+			if (typeof window.__nstClearSubtitleDB === 'function') {
+				window.__nstClearSubtitleDB(sendResponse);
+				return true; // Keep message channel open for async response
+			} else {
+				sendResponse({ ok: false, error: 'Extension not initialized on this page.' });
+			}
+		} catch(e) {
+			sendResponse({ ok: false, error: 'Clear error: ' + (e && e.message) });
 		}
 		return true;
 	}

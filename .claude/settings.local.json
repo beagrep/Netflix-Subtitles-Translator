@@ -16,7 +16,10 @@
       "Bash(awk 'NR>=137 && NR<=164 {gsub\\(/\\\\t/, \"<TAB>\"\\); print NR\": \"$0}' /Users/baohaojun/src/github/Netflix-Subtitles-Translator/content-script.js)",
       "Bash(curl -sSL -o vendor/sqljs/sql-wasm.js https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js)",
       "Bash(curl -sSL -o vendor/sqljs/sql-wasm.wasm https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.wasm)",
-      "Bash(node --check /Users/baohaojun/src/github/Netflix-Subtitles-Translator/content-script.js)"
+      "Bash(node --check /Users/baohaojun/src/github/Netflix-Subtitles-Translator/content-script.js)",
+      "Skill(todo)",
+      "Skill(todo:*)",
+      "Bash(git checkout *)"
     ]
   }
 }

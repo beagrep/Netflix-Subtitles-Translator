@@ -53,6 +53,23 @@
 		});
 	});
 
+	document.querySelector('#clear-db').addEventListener('click', function() {
+		chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
+			if (!tabs[0]) return;
+			chrome.tabs.sendMessage(tabs[0].id, { clearSubtitleDB: true }, function(resp) {
+				if (chrome.runtime.lastError) {
+					flashStatus('Open a Netflix tab first.');
+					return;
+				}
+				if (resp && resp.ok) {
+					flashStatus('Cleared ' + resp.count + ' subtitles from DB.');
+				} else {
+					flashStatus(resp && resp.error ? resp.error : 'No subtitles to clear.');
+				}
+			});
+		});
+	});
+
 	document.querySelector('#open-options').addEventListener('click', function(e) {
 		e.preventDefault();
 		if (chrome.runtime.openOptionsPage) {
