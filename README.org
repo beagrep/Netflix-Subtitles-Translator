@@ -709,44 +709,6 @@ click handlers and the live subtitle detector use the same
 implementation.
 
 
-** DONE Show the translation also above the original subtitle, use the same CSS. This one can be difficult, you can do research first (about how Netflix displays its own subtitle), then put our translated subtitle above it (for. e.g., change the original subtitle text to be the combined translated + original text?)
-
-Implemented in v1.22. Instead of using a separate overlay (the previous failed approach), this version directly modifies Netflix's own subtitle DOM elements. The translation is shown above the original text, both using Netflix's exact same styling and positioning (font, color, background, shadow, etc.). When a subtitle appears and we have its translation, we replace the content of Netflix's subtitle containers to show both lines. When the subtitle disappears, we restore the original DOM state. Cached translations are shown immediately when seeking back to a previously seen subtitle.
-
-Note, you have done it before, but failed, you should check the following DONE task and its summary, do not do it same way again
-*** DONE Show the translation also above the original subtitle, use the same CSS. This one can be difficult, you can do research first (about how Netflix displays its own subtitle), then put our translated subtitle above it (for. e.g., change the original subtitle text to be the combined translated + original text?)
-
-Implemented in v1.21. Added an overlay div =#nst-subtitle-overlay= positioned
-fixed at 20% from the bottom, centered. The overlay reads Netflix's subtitle
-element CSS (background color, text color, font size, font family, font weight,
-text shadow) and applies the same styling to the translated text. The overlay
-appears when a subtitle is detected and a translation is available, and clears
-when the subtitle disappears. When seeking to a previously seen subtitle, the
-cached translation is shown immediately.
-
-The implementation:
-- =getNstSubtitleOverlay()= creates/retrieves the overlay element
-- =updateSubtitleOverlay(original, translation)= updates the overlay with
-  translated text, copying Netflix's subtitle CSS style
-- =readAndHandle()= clears overlay when no subtitle is present, and updates
-  with cached translation when duplicate subtitle is found
-- =applyTranslation()= calls =updateSubtitleOverlay()= when translation arrives
-
-** DONE Now, there is another problem, once you change the subtitle, you seem to immediately invoke translate again, since change of subtitle whill cause translation, this is not want we want! this will flood google translate and cause rate limitation! Please fix it, cut off the 2nd translation when subtitle is not actually being changed by the netflix video, only by us.
-
-Also, you should make sure of this:
-
-1. The translated subtitle should not be on same line with the old subtitle (add a \n)
-2. The panel should not be affected by the updated subtitle display.
-
-Implemented in v1.23. Fixed the infinite loop caused by our subtitle DOM modifications triggering the MutationObserver again:
-
-- Modified =extractSubtitle()= to extract the original subtitle text from the =data-nst-original= attribute instead of from our modified textContent
-- Added =isUpdatingNetflixSubtitle= flag to skip processing during our own updates
-- Updated the MutationObserver callback to skip mutations on elements we've modified
-- The translation and original are already on separate lines (using =display: block=)
-- The side panel is unaffected since we track original text independently
-
 ** DONE Please add a button "Clear Subtitle DB", so that the current video's saved Subtitles in the sqlitedb could  be deleted.
 
 Implemented in v1.24:
@@ -758,3 +720,23 @@ Implemented in v1.24:
   - Our Netflix subtitle modifications
   - Database entries for current video
 - Returns count of cleared subtitles to show in popup status
+
+** DONE Refactor content-script.js into modular files
+
+Refactored the monolithic =content-script.js= into a modular structure under =src/content/=:
+
+- =utils.js= - Logging, fetch with cache, time formatting, filename sanitization
+- =config.js= - Configuration, options loading from storage, Google Translate URL builders
+- =db.js= - SQLite database management, cache, subtitle storage
+- =netflix/player.js= - Netflix player interaction, seek bridge, video time, non-linear mode
+- =netflix/subtitles.js= - Subtitle extraction from Netflix DOM
+- =ui/panel.js= - Right panel creation, resizing, open/close toggle
+- =ui/subtitles.js= - Subtitle list UI, click handlers, highlighting, scrolling
+- =ui/translate-panel.js= - Word translation panel with dictionary & images
+- =ui/pause.js= - Netflix play/pause control interaction
+- =ui/center-translator.js= - Overlay center translation display
+- =translator.js= - Core translation logic, in-memory captures, retry queue
+- =export.js= - Org-mode export functionality
+- =main.js= - Main loop, polling, ties all modules together
+
+Manifest updated to load modules in correct dependency order (v1.25).

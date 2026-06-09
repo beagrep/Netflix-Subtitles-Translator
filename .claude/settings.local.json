@@ -19,7 +19,8 @@
       "Bash(node --check /Users/baohaojun/src/github/Netflix-Subtitles-Translator/content-script.js)",
       "Skill(todo)",
       "Skill(todo:*)",
-      "Bash(git checkout *)"
+      "Bash(git checkout *)",
+      "Bash(mkdir -p src/content/ui src/content/netflix)"
     ]
   }
 }
