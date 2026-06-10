@@ -755,3 +755,22 @@ Implemented in v1.26-v1.28:
   - Fallback to pattern matching for speaker tags like =[로기]= / =[터그]=
   - Added debug logging to help diagnose issues
 - v1.28: Added multi-line translation support - translate each line separately and preserve line breaks in the output
+
+** DONE Take a look of the screenshot of an old version of this plugin, note how there is a small box on the right, this is the translated subtitle, but I can't see it now, can you fix it?
+
+[[./screenshot.png]]
+
+For your reference, I have checked out the old version where there should be this box, but note that we have changed a lot, so if you need to see the whole picture, you can do it in another tmp dir, clone from this project dir, switch to that version in the temp dir, etc.
+
+[[file:content-script.js.~e4a0bf62008d7379f270f7c86fb9e8457053376c~]]
+
+Fixed in v1.29: restored the center translator overlay that shows translated subtitles automatically on the right side of the screen:
+- Added =showTranslation()= method to center-translator.js to display already-translated text
+- Updated translator.js to show translation in overlay when it arrives for the current subtitle
+- Updated main.js to show existing translation in overlay when seeking back to a previously-seen subtitle
+- The overlay respects the =showsec= user option for how long to stay visible
+
+** TODO You have done a good job, the box is now back. Now, another request.
+
+1. Git commit current changes first.
+2. Can you make the box background transparent, and positioned right above the real subtitle in the center? So that our translated subtitle could look like part of the real subtitle.

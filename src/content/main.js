@@ -95,6 +95,10 @@
         if (dl) {
           subtitlesUI.scrollSubtitleDlIntoView(dl);
         }
+        // If we already have a translation, show it in the center overlay
+        if (dup.translation && centerTranslator && centerTranslator.showTranslation) {
+          centerTranslator.showTranslation(dup.translation);
+        }
         subtitleBefore = subtitle;
         return;
       }

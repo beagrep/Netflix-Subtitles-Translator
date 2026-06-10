@@ -88,6 +88,14 @@
     if (NST.ui && NST.ui.subtitles) {
       NST.ui.subtitles.applyTranslation(target, gtrans);
     }
+
+    // Also show in the center translator overlay if this is the current subtitle
+    // (don't show for preloaded subtitles)
+    if (!capture.preloaded && target && target.classList && target.classList.contains('nst-current')) {
+      if (NST.ui && NST.ui.centerTranslator && NST.ui.centerTranslator.showTranslation) {
+        NST.ui.centerTranslator.showTranslation(gtrans);
+      }
+    }
   }
 
   /**

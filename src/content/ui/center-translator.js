@@ -74,6 +74,23 @@
   }
 
   /**
+   * Show a translation directly (already translated)
+   */
+  function showTranslation(translation) {
+    const elm = getEl();
+    if (!elm || !translation) return;
+
+    // Clear any existing
+    clear();
+
+    // Set the text
+    elm.textContent = translation;
+
+    // Show it
+    show();
+  }
+
+  /**
    * Show the center translator
    */
   function show() {
@@ -83,10 +100,10 @@
     elm.classList.add(config.SELECTORS.mainTranslateOpenClass);
     clearTimeout(tmd);
 
+    const showsec = (typeof config.user.showsec === 'number') ? config.user.showsec : 5;
     tmd = setTimeout(function() {
       clear();
-      if (config.user.delay && pause) pause.start();
-    }, config.user.showsec * 1000);
+    }, showsec * 1000);
   }
 
   /**
@@ -105,6 +122,7 @@
   NST.ui.centerTranslator = {
     init: init,
     translate: translate,
+    showTranslation: showTranslation,
     show: show,
     clear: clear
   };
