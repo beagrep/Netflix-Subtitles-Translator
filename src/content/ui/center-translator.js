@@ -3,120 +3,137 @@
  * Manages the overlay center translation display.
  */
 (function(NST) {
-  'use strict';
+	'use strict';
 
-  const config = NST.config || {
-    SELECTORS: {
-      mainTranslateId: 'translate-ext-main-tr',
-      mainTranslateOpenClass: 'open-bg-tr'
-    },
-    user: {}
-  };
+	const config = NST.config || {
+		SELECTORS: {
+			mainTranslateId: 'translate-ext-main-tr',
+			mainTranslateOpenClass: 'open-bg-tr'
+		},
+		user: {}
+	};
 
-  const loadJson = NST.utils ? NST.utils.loadJson : function() {};
-  const gtansUrl = NST.config ? NST.config.gtansUrl : function() { return ''; };
+	const loadJson = NST.utils ? NST.utils.loadJson : function() {};
+	const gtansUrl = NST.config ? NST.config.gtansUrl : function() { return ''; };
 
-  let tmd = null;
-  let currentSentence = null;
+	let currentSentence = null;
 
-  /**
-   * Get the center translator element
-   */
-  function getEl() {
-    return document.getElementById(config.SELECTORS.mainTranslateId);
-  }
+	/**
+	 * Get the center translator element
+	 */
+	function getEl() {
+		return document.getElementById(config.SELECTORS.mainTranslateId);
+	}
 
-  /**
-   * Initialize with a sentence (set up click listeners on subtitle DOM)
-   */
-  function init(sentence, subtitleContainer) {
-    currentSentence = sentence;
-    // No longer setting up click listeners since the overlay is passive
-    // (pointer-events: none in CSS)
-  }
+	/**
+	 * Apply the current settings to the overlay element
+	 */
+	function applySettings() {
+		const el = getEl();
+		if (!el) return;
+		// Apply position and size via CSS variables
+		if (config.user.overlayPosition) {
+			el.style.setProperty('--nst-overlay-position', config.user.overlayPosition + '%');
+		}
+		if (config.user.overlaySize) {
+			el.style.setProperty('--nst-overlay-size', config.user.overlaySize + 'vw');
+		}
+	}
 
-  /**
-   * Translate a sentence and show in center overlay
-   */
-  function translate(sentence) {
-    const elm = getEl();
-    if (!elm) return;
+	/**
+	 * Initialize with a sentence (set up click listeners on subtitle DOM)
+	 */
+	function init(sentence, subtitleContainer) {
+		currentSentence = sentence;
+		applySettings();
+	}
 
-    clear();
+	/**
+	 * Translate a sentence and show in center overlay
+	 */
+	function translate(sentence) {
+		const el = getEl();
+		if (!el) return;
 
-    loadJson(gtansUrl(sentence), function(data) {
-      if (!data) return;
+		clear();
 
-      let gtrans = '';
-      data['sentences'].forEach(function(s) {
-        gtrans += s.trans + ' ';
-      });
-      gtrans = gtrans.trim();
+		loadJson(gtansUrl(sentence), function(data) {
+			if (!data) return;
 
-      if (gtrans !== '') {
-        elm.textContent = gtrans;
-        show();
-      }
-    });
-  }
+			let gtrans = '';
+			data['sentences'].forEach(function(s) {
+				gtrans += s.trans + ' ';
+			});
+			gtrans = gtrans.trim();
 
-  /**
-   * Show a translation directly (already translated)
-   */
-  function showTranslation(translation) {
-    const elm = getEl();
-    if (!elm || !translation) return;
+			if (gtrans !== '') {
+				el.textContent = gtrans;
+				show();
+			}
+		});
+	}
 
-    // Clear any existing
-    clear();
+	/**
+	 * Show a translation directly (already translated)
+	 */
+	function showTranslation(translation) {
+		const el = getEl();
+		if (!el || !translation) return;
 
-    // Preserve line breaks in the display
-    if (translation.indexOf('\n') >= 0) {
-      elm.innerHTML = translation.replace(/\r?\n/g, '<br>');
-    } else {
-      elm.textContent = translation;
-    }
+		// Check if overlay is enabled
+		if (!config.user.overlayEnabled) {
+			clear();
+			return;
+		}
 
-    // Show it
-    show();
-  }
+		// Clear any existing first
+		clear();
 
-  /**
-   * Show the center translator
-   */
-  function show() {
-    const elm = getEl();
-    if (!elm) return;
+		// Apply current settings
+		applySettings();
 
-    elm.classList.add(config.SELECTORS.mainTranslateOpenClass);
-    clearTimeout(tmd);
+		// Preserve line breaks in the display
+		if (translation.indexOf('\n') >= 0) {
+			el.innerHTML = translation.replace(/\r?\n/g, '<br>');
+		} else {
+			el.textContent = translation;
+		}
 
-    const showsec = (typeof config.user.showsec === 'number') ? config.user.showsec : 5;
-    tmd = setTimeout(function() {
-      clear();
-    }, showsec * 1000);
-  }
+		// Show it
+		show();
+	}
 
-  /**
-   * Clear and hide the center translator
-   */
-  function clear() {
-    const elm = getEl();
-    if (!elm) return;
+	/**
+	 * Show the center translator
+	 */
+	function show() {
+		const el = getEl();
+		if (!el) return;
+		// Don't show if disabled
+		if (!config.user.overlayEnabled) return;
+		el.classList.add(config.SELECTORS.mainTranslateOpenClass);
+	}
 
-    elm.classList.remove(config.SELECTORS.mainTranslateOpenClass);
-    elm.textContent = '';
-    elm.innerHTML = '';
-  }
+	/**
+	 * Clear and hide the center translator
+	 */
+	function clear() {
+		const el = getEl();
+		if (!el) return;
+		el.classList.remove(config.SELECTORS.mainTranslateOpenClass);
+		el.textContent = '';
+		el.innerHTML = '';
+	}
 
-  // Export public API
-  NST.ui = NST.ui || {};
-  NST.ui.centerTranslator = {
-    init: init,
-    translate: translate,
-    showTranslation: showTranslation,
-    show: show,
-    clear: clear
-  };
+	// Export public API
+	NST.ui = NST.ui || {};
+	NST.ui.centerTranslator = {
+		init: init,
+		translate: translate,
+		showTranslation: showTranslation,
+		show: show,
+		clear: clear,
+		applySettings: applySettings
+	};
 
-})(window.NST = window.NST || {});
+})(window.NST = window.NST || {})

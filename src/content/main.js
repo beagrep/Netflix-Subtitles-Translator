@@ -161,32 +161,22 @@
 
     // Load pre-existing subtitles
     if (videoId && translator) {
-      translator.loadVideoSubtitles(videoId, function(rows) {
-        if (!rows || !rows.length) {
+      translator.loadVideoSubtitles(videoId, function(entries) {
+        if (!entries || !entries.length) {
           LOG('nstDB: no prior subtitles for video', videoId);
           return;
         }
-        LOG('nstDB: preloading', rows.length, 'subtitles for video', videoId);
+        LOG('nstDB: preloading', entries.length, 'subtitles for video', videoId);
 
-        const captures = translator.getCaptures();
-        rows.forEach(function(r) {
-          // Add to in-memory captures
-          const entry = {
-            original: r.original,
-            translation: r.translation || '',
-            ts: Date.now(),
-            videoTime: typeof r.video_time === 'number' ? r.video_time : null,
-            dl: null,
-            preloaded: true,
-            status: r.status
-          };
+        entries.forEach(function(entry) {
+          // The entries are already created by translator.loadVideoSubtitles
+          // Just add them to captures and UI
           translator.addCapture(entry);
 
           // Add to UI
           if (subtitlesUI) {
-            subtitlesUI.add(entry.original, entry.videoTime);
-            // Find the DL element we just added
-            entry.dl = subtitlesUI.findDlByCapture(entry);
+            // Use the returned dl element directly instead of searching for it
+            entry.dl = subtitlesUI.add(entry.original, entry.videoTime);
             // Apply translation if we have it
             if (entry.translation && entry.dl) {
               subtitlesUI.applyTranslation(entry.dl, entry.translation);
@@ -321,6 +311,17 @@ chrome.runtime.onMessage.addListener(
         sendResponse({ ok: false, error: 'Clear error: ' + (e && e.message) });
       }
       return true;
+    }
+
+    if (request.updateOverlaySettings) {
+      // Reload options and apply to overlay
+      if (config && config.getOptions) {
+        config.getOptions(function() {
+          if (centerTranslator && centerTranslator.applySettings) {
+            centerTranslator.applySettings();
+          }
+        });
+      }
     }
   }
 );

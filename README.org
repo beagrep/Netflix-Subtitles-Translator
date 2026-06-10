@@ -793,7 +793,7 @@ Fixed in v1.31:
 - Reduced font size from 3.5vw to 1.75vw (half size)
 - Moved position from 10% to 30% from bottom
 
-** TODO Great. New request:
+** DONE Great. New request:
 
 1. Make new options in the popup, so that I can control 3 things:
 
@@ -802,3 +802,27 @@ Fixed in v1.31:
    3. the size of the translated subtitle
 
 2. Currently, the translated subtitle seems to disappear after a while, please do not set the timer for it to disappear, instead, always display it, until the next translated subtitle replaced it.
+
+Fixed in v1.32:
+
+- Added 3 new options to popup: overlay on/off toggle, vertical position slider (10-50% from bottom), font size slider (1-3vw)
+- Removed auto-hide timer: overlay now stays visible until replaced by next subtitle or disabled
+- Options saved to chrome.storage.sync and apply immediately when changed
+- CSS uses CSS variables for dynamic position/size updates
+
+** DONE Great, now new request:
+
+Currently, after I reload a video, the saved and loaded panel subtitles have lost 2 parts of infomation:
+
+1. The timestamps
+2. The translations
+
+When I click on the loaded subtitle, the translation will appear (I think it is re-traslated with google or queried from DB cache), but not the timestamp.
+
+Please check where we lost this timestamp, I want the old translation and timestamp info back.
+
+Fixed in v1.33-v1.34:
+- When loading subtitles from DB, ensure video_time is parsed as a Number (sql.js might return strings for numeric columns)
+- Use the directly returned dl element from subtitlesUI.add() instead of searching with findDlByCapture()
+- **Critical bug fix**: translator.loadVideoSubtitles returns entry objects with `videoTime` (camelCase), but main.js was trying to access `r.video_time` (snake_case)
+- This ensures both timestamps and translations are correctly restored on page reload

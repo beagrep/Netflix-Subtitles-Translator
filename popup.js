@@ -5,9 +5,17 @@
 		chrome.storage.sync.get({
 			lang: 'en',
 			srcLang: 'auto',
+			overlayEnabled: true,
+			overlayPosition: 30,
+			overlaySize: 1.75
 		}, function(items) {
 			document.querySelector('#lang').value = items.lang;
 			document.querySelector('#srcLang').value = items.srcLang;
+			document.querySelector('#overlayEnabled').checked = items.overlayEnabled;
+			document.querySelector('#overlayPosition').value = items.overlayPosition;
+			document.querySelector('#overlayPositionValue').textContent = items.overlayPosition;
+			document.querySelector('#overlaySize').value = items.overlaySize;
+			document.querySelector('#overlaySizeValue').textContent = items.overlaySize;
 		});
 	}
 
@@ -17,16 +25,44 @@
 		setTimeout(function() { status.textContent = ''; }, 2500);
 	}
 
-	document.querySelector('#lang').addEventListener('change', function(e) {
-		chrome.storage.sync.set({ lang: e.target.value }, function() {
-			flashStatus('Target saved. Reload Netflix to apply.');
+	function saveAndNotify(key, value, msg) {
+		var settings = {};
+		settings[key] = value;
+		chrome.storage.sync.set(settings, function() {
+			flashStatus(msg);
+			// Also notify the active tab to update immediately
+			chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
+				if (tabs[0]) {
+					try { chrome.tabs.sendMessage(tabs[0].id, { updateOverlaySettings: true }); } catch(e) {}
+				}
+			});
 		});
+	}
+
+	document.querySelector('#lang').addEventListener('change', function(e) {
+		saveAndNotify('lang', e.target.value, 'Target saved.');
 	});
 
 	document.querySelector('#srcLang').addEventListener('change', function(e) {
-		chrome.storage.sync.set({ srcLang: e.target.value }, function() {
-			flashStatus('Source saved. Reload Netflix to apply.');
-		});
+		saveAndNotify('srcLang', e.target.value, 'Source saved.');
+	});
+
+	document.querySelector('#overlayEnabled').addEventListener('change', function(e) {
+		saveAndNotify('overlayEnabled', e.target.checked, 'Overlay ' + (e.target.checked ? 'enabled' : 'disabled') + '.');
+	});
+
+	document.querySelector('#overlayPosition').addEventListener('input', function(e) {
+		document.querySelector('#overlayPositionValue').textContent = e.target.value;
+	});
+	document.querySelector('#overlayPosition').addEventListener('change', function(e) {
+		saveAndNotify('overlayPosition', parseInt(e.target.value, 10), 'Position saved.');
+	});
+
+	document.querySelector('#overlaySize').addEventListener('input', function(e) {
+		document.querySelector('#overlaySizeValue').textContent = e.target.value;
+	});
+	document.querySelector('#overlaySize').addEventListener('change', function(e) {
+		saveAndNotify('overlaySize', parseFloat(e.target.value), 'Size saved.');
 	});
 
 	document.querySelector('#toggle').addEventListener('click', function() {
@@ -41,13 +77,13 @@
 			if (!tabs[0]) return;
 			chrome.tabs.sendMessage(tabs[0].id, { exportOrg: true }, function(resp) {
 				if (chrome.runtime.lastError) {
-					flashStatus('Open a Netflix tab first.');
+					flashStatus('Open Netflix first.');
 					return;
 				}
 				if (resp && resp.ok) {
 					flashStatus('Exported ' + resp.count + ' subtitles.');
 				} else {
-					flashStatus(resp && resp.error ? resp.error : 'No subtitles captured yet.');
+					flashStatus(resp && resp.error ? resp.error : 'No subtitles yet.');
 				}
 			});
 		});
@@ -58,11 +94,11 @@
 			if (!tabs[0]) return;
 			chrome.tabs.sendMessage(tabs[0].id, { clearSubtitleDB: true }, function(resp) {
 				if (chrome.runtime.lastError) {
-					flashStatus('Open a Netflix tab first.');
+					flashStatus('Open Netflix first.');
 					return;
 				}
 				if (resp && resp.ok) {
-					flashStatus('Cleared ' + resp.count + ' subtitles from DB.');
+					flashStatus('Cleared ' + resp.count + ' from DB.');
 				} else {
 					flashStatus(resp && resp.error ? resp.error : 'No subtitles to clear.');
 				}
@@ -80,4 +116,4 @@
 	});
 
 	document.addEventListener('DOMContentLoaded', restore_options);
-})();
+})()

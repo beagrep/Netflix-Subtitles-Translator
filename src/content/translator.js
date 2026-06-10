@@ -273,11 +273,19 @@
     db.loadVideoSubtitles(videoId, function(rows) {
       const loaded = [];
       rows.forEach(function(r) {
+        // Ensure video_time is a number (sql.js might return as string)
+        let videoTime = null;
+        if (r.video_time !== null && r.video_time !== undefined) {
+          const vtNum = Number(r.video_time);
+          if (!isNaN(vtNum)) {
+            videoTime = vtNum;
+          }
+        }
         const entry = {
           original: r.original,
           translation: r.translation || '',
           ts: Date.now(),
-          videoTime: typeof r.video_time === 'number' ? r.video_time : null,
+          videoTime: videoTime,
           dl: null,
           preloaded: true,
           status: r.status
