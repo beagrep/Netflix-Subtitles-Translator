@@ -42,7 +42,8 @@
 			images: false,
 			overlayEnabled: true,
 			overlayPosition: 30,
-			overlaySize: 1.75
+			overlaySize: 1.75,
+			overlayDuration: 5
 		},
 		SELECTORS: SELECTORS,
 		API_BASES: API_BASES
@@ -87,7 +88,8 @@
 			images: false,
 			overlayEnabled: true,
 			overlayPosition: 30,
-			overlaySize: 1.75
+			overlaySize: 1.75,
+			overlayDuration: 5
 		}, function(items) {
 			config.user.lang = items.lang;
 			config.user.srcLang = items.srcLang;
@@ -97,6 +99,7 @@
 			config.user.overlayEnabled = items.overlayEnabled;
 			config.user.overlayPosition = items.overlayPosition;
 			config.user.overlaySize = items.overlaySize;
+			config.user.overlayDuration = items.overlayDuration;
 			LOG('options loaded:', config.user);
 			if (callback) callback(config.user);
 		});

@@ -70,6 +70,11 @@ main { padding: 12px; }
 			<input type="range" id="overlaySize" name="overlaySize" min="1" max="3" step="0.25" value="1.75" style="width: 100%;">
 		</div>
 
+		<div class="row">
+			<label for="overlayDuration">Hide overlay after: <span id="overlayDurationValue">5</span> seconds (0 = always show)</label>
+			<input type="range" id="overlayDuration" name="overlayDuration" min="0" max="30" value="5" style="width: 100%;">
+		</div>
+
 		<div class="status" id="status"></div>
 
 		<div class="row">

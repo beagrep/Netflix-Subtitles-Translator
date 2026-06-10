@@ -17,6 +17,7 @@
 	const gtansUrl = NST.config ? NST.config.gtansUrl : function() { return ''; };
 
 	let currentSentence = null;
+	let hideTimeout = null;
 
 	/**
 	 * Get the center translator element
@@ -32,10 +33,10 @@
 		const el = getEl();
 		if (!el) return;
 		// Apply position and size via CSS variables
-		if (config.user.overlayPosition) {
+		if (typeof config.user.overlayPosition === 'number') {
 			el.style.setProperty('--nst-overlay-position', config.user.overlayPosition + '%');
 		}
-		if (config.user.overlaySize) {
+		if (typeof config.user.overlaySize === 'number') {
 			el.style.setProperty('--nst-overlay-size', config.user.overlaySize + 'vw');
 		}
 	}
@@ -111,7 +112,23 @@
 		if (!el) return;
 		// Don't show if disabled
 		if (!config.user.overlayEnabled) return;
+
+		// Clear any existing timeout
+		if (hideTimeout) {
+			clearTimeout(hideTimeout);
+			hideTimeout = null;
+		}
+
 		el.classList.add(config.SELECTORS.mainTranslateOpenClass);
+
+		// Set timeout to hide if duration > 0
+		const duration = typeof config.user.overlayDuration === 'number' ? config.user.overlayDuration : 5;
+		if (duration > 0) {
+			hideTimeout = setTimeout(function() {
+				clear();
+				hideTimeout = null;
+			}, duration * 1000);
+		}
 	}
 
 	/**
@@ -120,6 +137,12 @@
 	function clear() {
 		const el = getEl();
 		if (!el) return;
+
+		if (hideTimeout) {
+			clearTimeout(hideTimeout);
+			hideTimeout = null;
+		}
+
 		el.classList.remove(config.SELECTORS.mainTranslateOpenClass);
 		el.textContent = '';
 		el.innerHTML = '';

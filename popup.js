@@ -7,7 +7,8 @@
 			srcLang: 'auto',
 			overlayEnabled: true,
 			overlayPosition: 30,
-			overlaySize: 1.75
+			overlaySize: 1.75,
+			overlayDuration: 5
 		}, function(items) {
 			document.querySelector('#lang').value = items.lang;
 			document.querySelector('#srcLang').value = items.srcLang;
@@ -16,6 +17,8 @@
 			document.querySelector('#overlayPositionValue').textContent = items.overlayPosition;
 			document.querySelector('#overlaySize').value = items.overlaySize;
 			document.querySelector('#overlaySizeValue').textContent = items.overlaySize;
+			document.querySelector('#overlayDuration').value = items.overlayDuration;
+			document.querySelector('#overlayDurationValue').textContent = items.overlayDuration;
 		});
 	}
 
@@ -63,6 +66,13 @@
 	});
 	document.querySelector('#overlaySize').addEventListener('change', function(e) {
 		saveAndNotify('overlaySize', parseFloat(e.target.value), 'Size saved.');
+	});
+
+	document.querySelector('#overlayDuration').addEventListener('input', function(e) {
+		document.querySelector('#overlayDurationValue').textContent = e.target.value;
+	});
+	document.querySelector('#overlayDuration').addEventListener('change', function(e) {
+		saveAndNotify('overlayDuration', parseInt(e.target.value, 10), 'Duration saved.');
 	});
 
 	document.querySelector('#toggle').addEventListener('click', function() {
