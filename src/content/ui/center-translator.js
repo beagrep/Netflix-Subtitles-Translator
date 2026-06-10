@@ -15,7 +15,6 @@
 
   const loadJson = NST.utils ? NST.utils.loadJson : function() {};
   const gtansUrl = NST.config ? NST.config.gtansUrl : function() { return ''; };
-  const pause = NST.ui ? NST.ui.pause : null;
 
   let tmd = null;
   let currentSentence = null;
@@ -32,17 +31,8 @@
    */
   function init(sentence, subtitleContainer) {
     currentSentence = sentence;
-    const elm = getEl();
-    if (!elm) return;
-
-    try {
-      const containers = subtitleContainer.querySelectorAll('.player-timedtext-text-container');
-      containers.forEach(function(elem) {
-        elem.addEventListener('click', function() {
-          translate(currentSentence);
-        });
-      });
-    } catch(e){}
+    // No longer setting up click listeners since the overlay is passive
+    // (pointer-events: none in CSS)
   }
 
   /**
@@ -53,22 +43,19 @@
     if (!elm) return;
 
     clear();
-    if (config.user.delay && pause) pause.stop();
 
     loadJson(gtansUrl(sentence), function(data) {
-      if (!data) {
-        if (config.user.delay && pause) pause.start();
-        return;
-      }
+      if (!data) return;
 
+      let gtrans = '';
       data['sentences'].forEach(function(s) {
-        elm.textContent += s.trans + ' ';
+        gtrans += s.trans + ' ';
       });
+      gtrans = gtrans.trim();
 
-      if (elm.textContent !== '') {
+      if (gtrans !== '') {
+        elm.textContent = gtrans;
         show();
-      } else if (config.user.delay && pause) {
-        pause.start();
       }
     });
   }
@@ -83,8 +70,12 @@
     // Clear any existing
     clear();
 
-    // Set the text
-    elm.textContent = translation;
+    // Preserve line breaks in the display
+    if (translation.indexOf('\n') >= 0) {
+      elm.innerHTML = translation.replace(/\r?\n/g, '<br>');
+    } else {
+      elm.textContent = translation;
+    }
 
     // Show it
     show();
@@ -115,6 +106,7 @@
 
     elm.classList.remove(config.SELECTORS.mainTranslateOpenClass);
     elm.textContent = '';
+    elm.innerHTML = '';
   }
 
   // Export public API

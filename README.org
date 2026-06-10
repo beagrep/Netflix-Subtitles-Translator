@@ -770,7 +770,35 @@ Fixed in v1.29: restored the center translator overlay that shows translated sub
 - Updated main.js to show existing translation in overlay when seeking back to a previously-seen subtitle
 - The overlay respects the =showsec= user option for how long to stay visible
 
-** TODO You have done a good job, the box is now back. Now, another request.
+** DONE You have done a good job, the box is now back. Now, another request.
 
-1. Git commit current changes first.
-2. Can you make the box background transparent, and positioned right above the real subtitle in the center? So that our translated subtitle could look like part of the real subtitle.
+Can you make the box background transparent, and positioned right above the real subtitle in the center? So that our translated subtitle could look like part of the real subtitle.
+
+Fixed in v1.30: updated the center translator overlay styling:
+- Moved to center-bottom position (10% from bottom, centered horizontally)
+- Changed background to transparent
+- Styled to look like Netflix subtitles: white bold text with black text-shadow/outline
+- Removed border and box-shadow
+- Larger font (3.5vw) for better readability
+- Added =pointer-events: none= so clicks pass through to Netflix
+- Preserves line breaks in multi-line translations
+- Removed pause-on-click functionality (overlay is now passive)
+
+** DONE Great. New request:
+
+1. The font should be smaller, about half current size
+2. It should be higher up, maybe 30% from bottom?
+
+Fixed in v1.31:
+- Reduced font size from 3.5vw to 1.75vw (half size)
+- Moved position from 10% to 30% from bottom
+
+** TODO Great. New request:
+
+1. Make new options in the popup, so that I can control 3 things:
+
+   1. whether the traslated subtitle should be on or off
+   2. the vertical position of the translated subtitle
+   3. the size of the translated subtitle
+
+2. Currently, the translated subtitle seems to disappear after a while, please do not set the timer for it to disappear, instead, always display it, until the next translated subtitle replaced it.
