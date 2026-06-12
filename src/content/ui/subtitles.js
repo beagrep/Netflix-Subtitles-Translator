@@ -44,16 +44,13 @@
   }
 
   /**
-   * Check if there's room to insert a new element at the bottom
-   * We estimate the room needed based on the last element's height
+   * Check if we're already scrolled near the bottom
    */
-  function hasRoomForNewElement(wrap) {
+  function isScrolledToBottom(wrap) {
     if (!wrap) return false;
-    const lastEl = wrap.lastElementChild;
-    const estHeight = lastEl ? lastEl.offsetHeight * 2 : 100; // Estimate height needed
     const scrollBottom = wrap.scrollTop + wrap.clientHeight;
-    const remaining = wrap.scrollHeight - scrollBottom;
-    return remaining >= estHeight;
+    const distanceFromBottom = wrap.scrollHeight - scrollBottom;
+    return distanceFromBottom < 100; // Within 100px of bottom
   }
 
   /**
@@ -64,8 +61,8 @@
     if (!wrap || !isAppendingAtEnd) return false;
     if (window.__nstNonLinear) return false;
 
-    // Check if we have room
-    if (hasRoomForNewElement(wrap)) {
+    // Only scroll if we're already near the bottom
+    if (!isScrolledToBottom(wrap)) {
       return false; // No need to scroll
     }
 

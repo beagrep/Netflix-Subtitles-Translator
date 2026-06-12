@@ -869,3 +869,31 @@ Implemented in v1.37:
 - Added =scrollCurrentToTopIfNeeded()= function that scrolls current subtitle to top BEFORE inserting new one when no room available
 - Modified =add()= to check if appending at end and scroll before insert if needed
 - Modified =scroll()= to not scroll after append at end (handled before insert)
+
+** DONE Currently, the panel size seems to be too large, should make it smaller, so that it's top and bottom aligns with the browser window.
+
+Implemented in v1.38:
+- Changed panel from `position:absolute` to `position:fixed` with `top:0; right:0; bottom:0` so it always aligns perfectly with the browser viewport
+- Removed explicit `height:100vh` from panel and child elements, use `height:100%` instead for more reliable sizing
+- This ensures the panel never overflows or underflows the browser window
+
+** DONE The Panel got switched to the right of the window, please keep it at the left, just like before.
+
+Fixed in v1.39:
+- Changed panel positioning from `right:0` to `left:0` to restore original left-side placement
+- Kept the `position:fixed; top:0; bottom:0` improvements for perfect viewport alignment
+
+** DONE make the panel open by default on page open/reload etc.
+
+Implemented in v1.40:
+- Added `document.body.classList.add('open-tr-panel')` in `init()` function in `src/content/main.js`
+- Panel now automatically opens on page load/reload without needing to click the toggle button
+
+** DONE please check what you have done in v1.37 and v1.38, you did a good job except a small bug fixed in v1.39, but now, v1.37's feature seems to be gone, not working (new entrys won't scroll to the top, always stays at bottom, can't scroll new entries to the top manually). please double check the todo tasks.
+
+Fixed in v1.41:
+- Changed `hasRoomForNewElement` to `isScrolledToBottom` - the old logic wasn't working because we now always have extra room at the bottom from the padding
+- Now we check if we're scrolled near the bottom (within 100px) instead of checking for remaining space
+- When we are near the bottom and a new subtitle arrives, we still scroll the current one to the top first
+- Changed from `padding-bottom:100vh` to using an `::after` pseudo-element with `height:100vh` for better compatibility
+- Both features are now working: timestamp clicks don't scroll, and new entries scroll current to top when at bottom
