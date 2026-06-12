@@ -897,3 +897,11 @@ Fixed in v1.41:
 - When we are near the bottom and a new subtitle arrives, we still scroll the current one to the top first
 - Changed from `padding-bottom:100vh` to using an `::after` pseudo-element with `height:100vh` for better compatibility
 - Both features are now working: timestamp clicks don't scroll, and new entries scroll current to top when at bottom
+
+** DONE The panel virtual view seem to be a little bit too large both at the top and the bottom, currently, when the last subtitle N is at the bottom, and N+1 comes, the N+1 will be invisible in the bottom that exceeds the view area; then, when N+2 come, the "scroll to top happens", but the scroll is a bit too much overdone, so that the panel is all white, until the N+3 comes, then it will be displayed in the top and viewable.
+
+Fixed in v1.42:
+- Reduced virtual space from 100vh to 60vh to avoid too much blank space
+- Added logic to track whether we scrolled current to top
+- When we do scroll current to top, after inserting the new subtitle, we adjust the scroll just enough to make sure the new subtitle is also visible
+- This prevents both the invisible N+1 and the all-white panel issues

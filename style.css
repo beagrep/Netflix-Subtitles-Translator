@@ -67,7 +67,7 @@ body:not(.open-tr-panel) #translate-ext-resize-handle{
 
 
 #translate-ext #subtitle-wrap{line-height:1.5; height:100%; box-shadow:inset 0px 0 20px rgba(0,0,0,.2); }
-#translate-ext #subtitle-wrap::after{content:""; display:block; height:100vh;}
+#translate-ext #subtitle-wrap::after{content:""; display:block; height:60vh;}
 #translate-ext > *::-webkit-scrollbar {
     width: 10px;
 	background-color: #ddd;

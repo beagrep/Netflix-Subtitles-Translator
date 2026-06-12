@@ -192,6 +192,7 @@
     const wrap = getSubtitleWrap();
     let insertedDl = null;
     let isAppendingAtEnd = false;
+    let didScrollCurrentToTop = false;
 
     // First, determine if we're going to append at the end
     if (ts !== null) {
@@ -210,7 +211,7 @@
     }
 
     // Scroll current to top BEFORE inserting if needed
-    scrollCurrentToTopIfNeeded(wrap, isAppendingAtEnd);
+    didScrollCurrentToTop = scrollCurrentToTopIfNeeded(wrap, isAppendingAtEnd);
 
     // Now insert the new subtitle
     if (ts !== null) {
@@ -236,7 +237,21 @@
 
     lastInsertedDl = insertedDl;
     addClickListner(insertedDl);
-    scroll(insertedDl, true);
+
+    // If we scrolled current to top, make sure new subtitle is visible too
+    if (didScrollCurrentToTop && insertedDl) {
+      requestAnimationFrame(function() {
+        // Scroll just enough to show the new subtitle
+        const currentTop = wrap.scrollTop;
+        const newSubBottom = insertedDl.offsetTop + insertedDl.offsetHeight;
+        const viewBottom = currentTop + wrap.clientHeight;
+        if (newSubBottom > viewBottom) {
+          wrap.scrollTop = newSubBottom - wrap.clientHeight + 10;
+        }
+      });
+    } else {
+      scroll(insertedDl, true);
+    }
 
     return insertedDl;
   }
