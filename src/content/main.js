@@ -89,11 +89,12 @@
       // Check if we already have this subtitle
       const dup = translator ? translator.findExistingCapture(subtitle, vt) : null;
       if (dup) {
-        LOG('subtitle is duplicate of capture vt=', dup.videoTime, '— scrolling to existing row');
+        LOG('subtitle is duplicate of capture vt=', dup.videoTime, '— moving highlight to existing row');
         const dl = subtitlesUI ? subtitlesUI.findDlByCapture(dup) : null;
         if (subtitlesUI) subtitlesUI.setCurrent(dl);
         if (dl) {
-          subtitlesUI.scrollSubtitleDlIntoView(dl);
+          // Use the smarter scroll that doesn't move if already visible
+          subtitlesUI.scroll(dl, false);
         }
         // If we already have a translation, show it in the center overlay
         if (dup.translation && centerTranslator && centerTranslator.showTranslation) {

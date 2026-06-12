@@ -32,9 +32,59 @@
   }
 
   /**
-   * Scroll the panel appropriately based on current state
+   * Check if an element is fully visible in the subtitle wrap
    */
-  function scroll(insertedDl) {
+  function isElementFullyVisible(el, wrap) {
+    if (!el || !wrap) return false;
+    const elTop = el.offsetTop;
+    const elBottom = elTop + el.offsetHeight;
+    const viewTop = wrap.scrollTop;
+    const viewBottom = viewTop + wrap.clientHeight;
+    return elTop >= viewTop && elBottom <= viewBottom;
+  }
+
+  /**
+   * Check if there's room to insert a new element at the bottom
+   * We estimate the room needed based on the last element's height
+   */
+  function hasRoomForNewElement(wrap) {
+    if (!wrap) return false;
+    const lastEl = wrap.lastElementChild;
+    const estHeight = lastEl ? lastEl.offsetHeight * 2 : 100; // Estimate height needed
+    const scrollBottom = wrap.scrollTop + wrap.clientHeight;
+    const remaining = wrap.scrollHeight - scrollBottom;
+    return remaining >= estHeight;
+  }
+
+  /**
+   * Scroll the current subtitle to the top of the panel
+   * Call this BEFORE inserting a new subtitle
+   */
+  function scrollCurrentToTopIfNeeded(wrap, isAppendingAtEnd) {
+    if (!wrap || !isAppendingAtEnd) return false;
+    if (window.__nstNonLinear) return false;
+
+    // Check if we have room
+    if (hasRoomForNewElement(wrap)) {
+      return false; // No need to scroll
+    }
+
+    // Find the current subtitle and scroll it to top
+    const current = wrap.querySelector('dl.nst-current');
+    if (current) {
+      wrap.scrollTop = current.offsetTop;
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Scroll the panel appropriately based on current state
+   * Mode 1: Just change highlight, no scroll if current/next are visible
+   * Mode 2: Insert new subtitle - no scroll if room exists or we already scrolled
+   * Mode 3: No room - scroll current to top first, then insert (handled before insert)
+   */
+  function scroll(insertedDl, isNewInsert) {
     const S = config.SELECTORS;
     const elm = getSubtitleWrap();
     if (!elm) return;
@@ -47,8 +97,14 @@
       return;
     }
 
-    const isLast = insertedDl && insertedDl === elm.lastElementChild;
-    if (insertedDl && (window.__nstNonLinear || !isLast)) {
+    // If this is not a new insert (just moving highlight), don't scroll if visible
+    if (insertedDl && !isNewInsert) {
+      // Check if the element is already fully visible
+      if (isElementFullyVisible(insertedDl, elm)) {
+        // Just change highlight, no scroll needed
+        return;
+      }
+      // If not fully visible, center it
       try {
         insertedDl.scrollIntoView({ block: 'center' });
       } catch(_) {
@@ -56,7 +112,23 @@
       }
       return;
     }
-    elm.scrollTop = elm.scrollHeight;
+
+    // This is a new insert
+    if (insertedDl) {
+      const isLast = insertedDl === elm.lastElementChild;
+      // In non-linear mode or inserting in the middle, center it
+      if (window.__nstNonLinear || !isLast) {
+        try {
+          insertedDl.scrollIntoView({ block: 'center' });
+        } catch(_) {
+          elm.scrollTop = Math.max(0, insertedDl.offsetTop - elm.clientHeight/2);
+        }
+        return;
+      }
+      // Appending at the end - we already handled scrolling before insert
+      // Just don't scroll now
+      return;
+    }
   }
 
   /**
@@ -122,7 +194,28 @@
 
     const wrap = getSubtitleWrap();
     let insertedDl = null;
+    let isAppendingAtEnd = false;
 
+    // First, determine if we're going to append at the end
+    if (ts !== null) {
+      const existing = wrap.querySelectorAll('dl[data-vt]');
+      let willInsertAtEnd = true;
+      for (let i = 0; i < existing.length; i++) {
+        const evt = parseFloat(existing[i].getAttribute('data-vt'));
+        if (!isNaN(evt) && evt > ts) {
+          willInsertAtEnd = false;
+          break;
+        }
+      }
+      isAppendingAtEnd = willInsertAtEnd;
+    } else {
+      isAppendingAtEnd = true;
+    }
+
+    // Scroll current to top BEFORE inserting if needed
+    scrollCurrentToTopIfNeeded(wrap, isAppendingAtEnd);
+
+    // Now insert the new subtitle
     if (ts !== null) {
       const existing = wrap.querySelectorAll('dl[data-vt]');
       let inserted = false;
@@ -146,7 +239,7 @@
 
     lastInsertedDl = insertedDl;
     addClickListner(insertedDl);
-    scroll(insertedDl);
+    scroll(insertedDl, true);
 
     return insertedDl;
   }
@@ -172,6 +265,12 @@
     const sw = getSubtitleWrap();
     if (!sw || !document.body.classList.contains('open-tr-panel')) return;
 
+    // Don't scroll if the element is already fully visible
+    if (dl && isElementFullyVisible(dl, sw)) {
+      return;
+    }
+
+    // Otherwise use the same logic as scroll()
     const isLast = dl && dl === sw.lastElementChild;
     if (dl && (window.__nstNonLinear || !isLast)) {
       requestAnimationFrame(function() {
@@ -223,7 +322,7 @@
           e.preventDefault();
           e.stopPropagation();
           setCurrent(dl);
-          scrollSubtitleDlIntoView(dl);
+          // Don't scroll - only change highlight
           if (NST.netflix && NST.netflix.player) {
             NST.netflix.player.seekVideo(vt);
           }
@@ -242,7 +341,7 @@
         e.preventDefault();
         e.stopPropagation();
         setCurrent(dl);
-        scrollSubtitleDlIntoView(dl);
+        // Don't scroll - only change highlight
         if (NST.netflix && NST.netflix.player) {
           NST.netflix.player.seekVideo(vt);
         }
@@ -347,7 +446,8 @@
     addClickListner: addClickListner,
     clearAll: clearAll,
     setTranslatePanel: setTranslatePanel,
-    getSubtitleWrap: getSubtitleWrap
+    getSubtitleWrap: getSubtitleWrap,
+    isElementFullyVisible: isElementFullyVisible
   };
 
 })(window.NST = window.NST || {});

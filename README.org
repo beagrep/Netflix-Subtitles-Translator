@@ -834,3 +834,38 @@ Fixed in v1.35:
 - Overlay now auto-hides after the configured duration (default 5 seconds)
 - Setting is saved to chrome.storage.sync and applies immediately
 - Changed CSS transition to only affect opacity for smoother show/hide
+
+** DONE Currently, the panel is almost always scrolling when the subtitles change, hope you can make it stable,
+
+that is,
+
+1. When the whole current and next subtitles (including their translations) are visible in the panel, don't scroll at all, simply change the highlight to the next subtitle;
+2. When there is room for next new subtitle, just insert and highlight it , don't scroll
+3. When there is no room for the next new subtitle, scroll current subtitle to the top first, then insert and highlight the next new subtitle
+
+Implemented in v1.36:
+
+- Added =isElementFullyVisible= and =hasRoomForNewElement= helper functions in =src/content/ui/subtitles.js=
+- Modified =scroll()= to accept an =isNewInsert= flag and behave smarter:
+  - When moving highlight between existing subtitles (not new insert), don't scroll if already visible
+  - When inserting a new subtitle at the end with room available, don't scroll
+  - When inserting without room, scroll current subtitle to top first
+- Modified =applyTranslation()= to also not scroll when the element is already visible
+- Updated =main.js= to use the new scroll behavior for the duplicate subtitle case
+
+** DONE You did a good job, please git commit. But there are also some issues, please fix:
+
+1. When I click a timestamp (MM:SS), you seem to always jump (scroll) the clicked subtitle to the middle, please don't scroll at all, only change highlight
+2. When a new subtitle arrives while the current subtitle is already at bottom, you only scroll up enough to insert the new subtitle (kind of like scrolling up a single line in an editor), this is not ideal, I want you to scroll the current subtitle to the top of the panel first, then insert the new subtitle.
+
+   Currently I tried manually scroll the last subtitle to the top, it can't be done, please try to figure out a way to do it, like in Emacs, where I can press C-l to scroll the current line to the top, the middle and the bottom, even if the current line is the last line.
+
+This requirement is maily to make my eyes easier to catch the active subtitle, instead of being forced to always searching for the new subtitle.
+
+Implemented in v1.37:
+
+- Removed scroll from timestamp click and dblclick handlers - now only changes highlight
+- Added =padding-bottom:100vh= to =#subtitle-wrap= in =style.css= to allow scrolling last subtitle to top
+- Added =scrollCurrentToTopIfNeeded()= function that scrolls current subtitle to top BEFORE inserting new one when no room available
+- Modified =add()= to check if appending at end and scroll before insert if needed
+- Modified =scroll()= to not scroll after append at end (handled before insert)
