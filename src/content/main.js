@@ -237,6 +237,9 @@
     // Create the UI panel first
     if (panel) panel.createTapeWrap();
 
+    // Open the panel by default
+    document.body.classList.add('open-tr-panel');
+
     // Set up clear DB function
     setupClearSubtitleDB();
 

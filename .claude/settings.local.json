@@ -20,7 +20,10 @@
       "Skill(todo)",
       "Skill(todo:*)",
       "Bash(git checkout *)",
-      "Bash(mkdir -p src/content/ui src/content/netflix)"
+      "Bash(mkdir -p src/content/ui src/content/netflix)",
+      "Bash(git add *)",
+      "Bash(git commit -m 'v1.37: Stable panel scrolling improvements *)",
+      "Bash(git commit *)"
     ]
   }
 }

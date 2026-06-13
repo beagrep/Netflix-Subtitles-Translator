@@ -905,3 +905,9 @@ Fixed in v1.42:
 - Added logic to track whether we scrolled current to top
 - When we do scroll current to top, after inserting the new subtitle, we adjust the scroll just enough to make sure the new subtitle is also visible
 - This prevents both the invisible N+1 and the all-white panel issues
+
+** TODO The panel is default on, now, we found it on even on the netflix home page, and can't be closed when on this page, which is undesirable, so, we want to make this panel behavior changed to be a persistent switch, that is:
+
+1. when we toggle it on, then it should stay on for any page, even if we have reloaded the page or jumped to another video
+2. when we toggle it off, then it should stay off
+3. We want a short-cut key to toggle it on/off, the command+shift-p key, that is, the command key on Mac, the shift key, and the "p" key.
