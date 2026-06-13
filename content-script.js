@@ -6,31 +6,31 @@
 	let translated = [];
 	let alltries = [];
 	let cache = [];
-	
+
 	let config = {
 
 		launched: false,
-		
+
 		user: {},
-	
+
 		mainWrap: "translate-ext",
 		subtitleWrap: "subtitle-wrap",
 
-		translatedSentence: "sent-tr-open",   
-			
+		translatedSentence: "sent-tr-open",
+
 		translationWrap: "translation-wrap",
 		openRightPanel:"open-tr-panel",
-		closeRightPanel:"tr-close-x", 
-		
+		closeRightPanel:"tr-close-x",
+
 		imgWrap: "img-tr-wrap",
 		imgWrapTitle: "img-tr-tile",
-		
-		dsecriptionWrap: "describe-tr-wrap",   
+
+		dsecriptionWrap: "describe-tr-wrap",
 		dsecriptionTitle: "describe-tr-title",
-		
+
 		mainTranslateId: "translate-ext-main-tr",
 		mainTranslateOpenClass: "open-bg-tr",
-			   
+
 		gimages: 'https://www.googleapis.com/customsearch/v1?&num=9&cx=017663620470495640824%3A3gyica0r5wy&filter=1&imgType=photo&safe=high&searchType=image&start=1&key=AIzaSyB4irElN8L3wOVcwwa2PnobvM0-FJOc2m8&q=',
 		gtansBase: 'https://translate.googleapis.com/translate_a/single?client=gtx&dt=t&dj=1&source=icon',
 		ftranBase: 'https://translate.googleapis.com/translate_a/single?client=gtx&hl=en-US&dt=t&dt=bd&dj=1',
@@ -46,7 +46,7 @@
 			+ '&tl=' + encodeURIComponent(config.user.lang || 'en')
 			+ '&q=' + encodeURIComponent(text);
 	}
-	
+
 	function get_options() {
 		  chrome.storage.sync.get({
 			lang: 'en',
@@ -700,40 +700,40 @@
 				});
 			},
 			clickedWordORSent:function(event){
-						
+
 				if(event.target.nodeName ==='SPAN'){
 					return traslatePanel().start(event.target.textContent);
 				}else{
 					return self.translateSentence(event.target);
 				}
-				
-			},	
-			translateSentence: function(el){
-			
 
-				
+			},
+			translateSentence: function(el){
+
+
+
 				 let sentence = el.textContent.toLowerCase();
-				 
+
 				 if(sentence == '') return false;
-				 
+
 				 if(el.nodeName !=='DL') while ((el = el.parentElement) && !el.nodeName ==='DL');
-				 
+
 				 if(typeof el == 'undefined'){ return false;}
-				 
+
 				 if(el.classList.contains(config.translatedSentence)){ return false;}
 
 				 el.classList.add(config.translatedSentence);
-				 
-				
+
+
 				loadJson(gtansUrl(sentence), function(data){
 					let gtrans = '';
-					data['sentences'].forEach(function(sentence){ 
+					data['sentences'].forEach(function(sentence){
 							gtrans += sentence.trans +' ';
 					});
-					
+
 					el.querySelector('dd').textContent = gtrans;
-				})		 
-				 
+				})
+
 			}
 		}
 	}
@@ -746,27 +746,27 @@
 				start: function(word){
 					self = this;
 					document.querySelector('#'+config.mainWrap).classList.add(config.openRightPanel);
-					
+
 					document.querySelector('#'+config.dsecriptionTitle).innerHTML = "<span>"+word+"</span>";
-					
+
 					document.querySelector('#'+config.imgWrap).textContent = '';
-					
+
 					if(config.user.images){ loadJson(config.gimages+encodeURI(word), this.addImages); }
-					
+
 					loadJson(ftranUrl(word), this.wordTranslate);
 
 					self.close();
 					self.voice(word);
 				},
 				voice:function(word){
-		
-				
+
+
 					let msg = new SpeechSynthesisUtterance(word);
 					msg.voice = speechSynthesis.getVoices().filter(function(voice) { return voice.name == 'Google US English'; })[0]; // chrome voice bug
 					msg.rate=0.5;
 					msg.volume=0.7;
-					msg.lang = 'en-US';	
-					
+					msg.lang = 'en-US';
+
 					document.querySelector('#'+config.dsecriptionTitle+' span').addEventListener('click', function(e) {
 						msg.voice = speechSynthesis.getVoices().filter(function(voice) { return voice.name == 'Google US English'; })[0]; // chrome voice bug
 						speechSynthesis.speak(msg);
@@ -775,42 +775,42 @@
 				close: function(){
 					document.querySelector('#'+config.closeRightPanel).addEventListener('click', function(e) {
 						document.querySelector('#'+config.mainWrap).classList.remove(config.openRightPanel);
-					}, false);			
+					}, false);
 				},
 				addImages :function(data){
-					data['items'].forEach(function(item){ 				
+					data['items'].forEach(function(item){
 						document.querySelector('#'+config.imgWrap).insertAdjacentHTML('beforeend', '<img src="'+item.image.thumbnailLink+'">');
 					});
 				},
 				wordTranslate: function(data){
 
 					document.querySelector('#'+config.mainWrap+' #'+config.dsecriptionWrap).innerHTML = '';
-					
+
 					if(data['sentences'][0]['trans']){
 							document.querySelector('#'+config.dsecriptionTitle).insertAdjacentHTML('beforeend', ' — ' + data['sentences'][0]['trans']);
 					}
-				
+
 					try{
 						data['dict'].forEach(function(block){
 								let items = [];
 								let limit = 3;
 								try{
-									block['entry'].forEach(function(ceil){ 
+									block['entry'].forEach(function(ceil){
 										items[ceil['word']] = ceil['reverse_translation'];
 										if(--limit == 0){ throw 'BreakException';}
 									});
 								} catch (e) {
 									if (e !== 'BreakException') throw e;
-								}	
-						
-							self.addToWrap(block['pos'],items);	
+								}
+
+							self.addToWrap(block['pos'],items);
 						});
 					}catch(e){
 					}
 				},
-			
+
 				addToWrap:function(type,items){
-								
+
 					let html = '<i>'+type+'</i>';
 
 					for (var key in items) {
@@ -819,13 +819,13 @@
 						html += '<dd>'+items[key].join(", ")+'</dd>';
 						html += '</dl>';
 					}
-						
+
 					document.querySelector('#'+config.mainWrap+' #'+config.dsecriptionWrap)
-							.insertAdjacentHTML('beforeend', html);		
-						
-			
+							.insertAdjacentHTML('beforeend', html);
+
+
 				}
-						
+
 			}
 
 	}
@@ -849,13 +849,13 @@
 				try{
 					document.querySelector('.button-nfplayerPlay').click();
 				}catch(e){}
-					
+
 			},
 			stop:function(){
 				try{
 					document.querySelector('.button-nfplayerPause').click();
-				}catch(e){}			
-			},	
+				}catch(e){}
+			},
 			toggle:function(){
 				try{
 					if(document.querySelector('.button-nfplayerPause')){
@@ -863,8 +863,8 @@
 					}else{
 						document.querySelector('.button-nfplayerPlay').click();
 					}
-				}catch(e){}	
-			},			
+				}catch(e){}
+			},
 		}
 	}
 
@@ -882,44 +882,44 @@
 						elem.addEventListener('click', function(){
 							self.translate(sentence);
 						});
-						
+
 					});
 				}catch(e){
-				
+
 				}
 			},
 			translate:function(sentence){
 				self.clear();
 				if(config.user.delay){pause().stop();}
 				loadJson(gtansUrl(sentence), function(data){
-					data['sentences'].forEach(function(sentence){ 
+					data['sentences'].forEach(function(sentence){
 							elm.textContent += sentence.trans +' ';
 					});
 					if(elm.textContent !== ''){ self.show();}else{pause().start();}
-				})			
-			
-				
-				
-			},			
+				})
+
+
+
+			},
 			show: function(){
 				elm.classList.add(config.mainTranslateOpenClass);
 				clearTimeout(tmd);
-				
+
 				tmd = setTimeout(function(){
-					self.clear(); 
+					self.clear();
 					if(config.user.delay){pause().start();}
 				},config.user.showsec*1000);
 			},
 			clear: function(){
 					elm.classList.remove(config.mainTranslateOpenClass);
 					elm.textContent = '';
-			},		
+			},
 		}
 
 	}
 
 
-	
+
 	let captures = [];
 
 	function getNetflixTitle() {

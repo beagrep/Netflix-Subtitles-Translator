@@ -19,6 +19,7 @@
 
 ## Validation
 
+- Run `pre-commit run --all-files` when `pre-commit` is installed.
 - Run `node --check` on changed JavaScript files.
 - For UI or Netflix behavior changes, manually load/reload the extension in the browser and test on a Netflix watch page when possible.
 - For popup changes, verify stored settings update immediately and still work after a page reload.

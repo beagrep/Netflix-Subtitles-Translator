@@ -23,7 +23,15 @@
       "Bash(mkdir -p src/content/ui src/content/netflix)",
       "Bash(git add *)",
       "Bash(git commit -m 'v1.37: Stable panel scrolling improvements *)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(node --check \"src/content/ui/panel.js\")",
+      "Bash(node --check \"src/content/main.js\")",
+      "Bash(node --check \"src/content/ui/subtitles.js\")",
+      "Bash(node --check \"src/content/netflix/player.js\")",
+      "Bash(python3 -)",
+      "Bash(node --check \"src/content/config.js\")",
+      "Bash(node --check \"popup.js\")",
+      "Bash(pre-commit run *)"
     ]
   }
 }

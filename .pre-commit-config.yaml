@@ -1,0 +1,44 @@
+repos:
+  - repo: local
+    hooks:
+      - id: check-json
+        name: check JSON syntax
+        entry: bash -c 'for file in "$@"; do python3 -m json.tool "$file" >/dev/null || exit 1; done' --
+        language: system
+        types: [json]
+        exclude: ^vendor/
+
+      - id: check-merge-conflict
+        name: check merge conflict markers
+        entry: python3 -c 'import pathlib, sys; markers=("<<<<<<< ", "=======", ">>>>>>> "); bad=[]; [bad.append(str(p)) for p in map(pathlib.Path, sys.argv[1:]) if any(m in p.read_text(errors="ignore") for m in markers)]; print("\n".join(bad)); sys.exit(1 if bad else 0)'
+        language: system
+        types: [text]
+        exclude: ^vendor/
+
+      - id: check-final-newline
+        name: check final newline
+        entry: python3 -c 'import pathlib, sys; bad=[]; [bad.append(str(p)) for p in map(pathlib.Path, sys.argv[1:]) if p.exists() and p.is_file() and p.read_bytes() and not p.read_bytes().endswith(b"\n")]; print("\n".join(bad)); sys.exit(1 if bad else 0)'
+        language: system
+        types: [text]
+        exclude: ^vendor/
+
+      - id: check-trailing-whitespace
+        name: check trailing whitespace
+        entry: python3 -c 'import pathlib, sys; bad=[]; [bad.append(f"{p}:{i}") for p in map(pathlib.Path, sys.argv[1:]) for i,l in enumerate(p.read_text(errors="ignore").splitlines(),1) if l.rstrip(" \t") != l]; print("\n".join(bad)); sys.exit(1 if bad else 0)'
+        language: system
+        types: [text]
+        exclude: ^vendor/
+
+      - id: check-mixed-line-ending
+        name: check mixed line endings
+        entry: python3 -c 'import pathlib, sys; bad=[]; [bad.append(str(p)) for p in map(pathlib.Path, sys.argv[1:]) if b"\r\n" in p.read_bytes() or b"\r" in p.read_bytes()]; print("\n".join(bad)); sys.exit(1 if bad else 0)'
+        language: system
+        types: [text]
+        exclude: ^vendor/
+
+      - id: node-check-js
+        name: node --check JavaScript syntax
+        entry: bash -c 'for file in "$@"; do node --check "$file"; done' --
+        language: system
+        types: [javascript]
+        exclude: ^vendor/

@@ -949,3 +949,7 @@ Implemented in v1.47:
 Then, git commit.
 
 Added =AGENT.md= with project-specific guidance for future agents: extension structure, content-script loading, =window.NST= module conventions, option wiring, validation expectations, README TODO workflow, and git hygiene.
+
+** DONE what kind of general pre-commit hooks are recommended for my project? add them.
+
+Added =.pre-commit-config.yaml= with local no-network hooks for JSON syntax, merge-conflict markers, final newline, trailing whitespace, mixed line endings, and =node --check= for JavaScript.  Updated =AGENT.md= to mention =pre-commit run --all-files= and normalized existing whitespace/final-newline issues so the hook suite passes.
