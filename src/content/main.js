@@ -235,10 +235,12 @@
    */
   function init() {
     // Create the UI panel first
-    if (panel) panel.createTapeWrap();
-
-    // Open the panel by default
-    document.body.classList.add('open-tr-panel');
+    if (panel) {
+      panel.createTapeWrap();
+      panel.restorePanelOpen();
+      panel.setupKeyboardShortcut();
+      panel.setupFullscreenSync();
+    }
 
     // Set up clear DB function
     setupClearSubtitleDB();
@@ -276,21 +278,7 @@ chrome.runtime.onMessage.addListener(
     try { console.log('[NST] message:', request); } catch(e){}
 
     if (request.buttonClick) {
-      if (!window.location.href.match(/.+:\/\/.+netflix\.com\/watch\//)) {
-        return false;
-      }
-      let bdclist = document.querySelector('body').classList;
-      if (bdclist.contains('open-tr-panel')) {
-        bdclist.remove('open-tr-panel');
-      } else {
-        bdclist.add('open-tr-panel');
-        try {
-          let sw = document.querySelector('#translate-ext #subtitle-wrap');
-          if (sw) {
-            requestAnimationFrame(function() { sw.scrollTop = sw.scrollHeight; });
-          }
-        } catch(e) {}
-      }
+      if (NST.ui && NST.ui.panel) NST.ui.panel.togglePanel();
     }
 
     if (request.exportOrg) {

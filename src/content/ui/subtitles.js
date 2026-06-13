@@ -53,6 +53,15 @@
     return distanceFromBottom < 100; // Within 100px of bottom
   }
 
+  function isElementNearViewBottom(el, wrap) {
+    if (!el || !wrap) return false;
+    const elBottom = el.offsetTop + el.offsetHeight;
+    const viewTop = wrap.scrollTop;
+    const percent = (config.user && typeof config.user.scrollThreshold === 'number') ? config.user.scrollThreshold : 85;
+    const threshold = viewTop + wrap.clientHeight * (percent / 100);
+    return elBottom >= threshold;
+  }
+
   /**
    * Scroll the current subtitle to the top of the panel
    * Call this BEFORE inserting a new subtitle
@@ -61,14 +70,9 @@
     if (!wrap || !isAppendingAtEnd) return false;
     if (window.__nstNonLinear) return false;
 
-    // Only scroll if we're already near the bottom
-    if (!isScrolledToBottom(wrap)) {
-      return false; // No need to scroll
-    }
-
     // Find the current subtitle and scroll it to top
     const current = wrap.querySelector('dl.nst-current');
-    if (current) {
+    if (current && (isScrolledToBottom(wrap) || isElementNearViewBottom(current, wrap))) {
       wrap.scrollTop = current.offsetTop;
       return true;
     }
@@ -337,6 +341,7 @@
           // Don't scroll - only change highlight
           if (NST.netflix && NST.netflix.player) {
             NST.netflix.player.seekVideo(vt);
+            NST.netflix.player.focusPlayer();
           }
         }
         return;
@@ -356,6 +361,7 @@
         // Don't scroll - only change highlight
         if (NST.netflix && NST.netflix.player) {
           NST.netflix.player.seekVideo(vt);
+          NST.netflix.player.focusPlayer();
         }
       }
     });

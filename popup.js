@@ -8,7 +8,8 @@
 			overlayEnabled: true,
 			overlayPosition: 30,
 			overlaySize: 1.75,
-			overlayDuration: 5
+			overlayDuration: 5,
+			scrollThreshold: 85
 		}, function(items) {
 			document.querySelector('#lang').value = items.lang;
 			document.querySelector('#srcLang').value = items.srcLang;
@@ -19,6 +20,8 @@
 			document.querySelector('#overlaySizeValue').textContent = items.overlaySize;
 			document.querySelector('#overlayDuration').value = items.overlayDuration;
 			document.querySelector('#overlayDurationValue').textContent = items.overlayDuration;
+			document.querySelector('#scrollThreshold').value = items.scrollThreshold;
+			document.querySelector('#scrollThresholdValue').textContent = items.scrollThreshold;
 		});
 	}
 
@@ -73,6 +76,13 @@
 	});
 	document.querySelector('#overlayDuration').addEventListener('change', function(e) {
 		saveAndNotify('overlayDuration', parseInt(e.target.value, 10), 'Duration saved.');
+	});
+
+	document.querySelector('#scrollThreshold').addEventListener('input', function(e) {
+		document.querySelector('#scrollThresholdValue').textContent = e.target.value;
+	});
+	document.querySelector('#scrollThreshold').addEventListener('change', function(e) {
+		saveAndNotify('scrollThreshold', parseInt(e.target.value, 10), 'Scroll threshold saved.');
 	});
 
 	document.querySelector('#toggle').addEventListener('click', function() {

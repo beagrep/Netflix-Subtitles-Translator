@@ -906,8 +906,46 @@ Fixed in v1.42:
 - When we do scroll current to top, after inserting the new subtitle, we adjust the scroll just enough to make sure the new subtitle is also visible
 - This prevents both the invisible N+1 and the all-white panel issues
 
-** TODO The panel is default on, now, we found it on even on the netflix home page, and can't be closed when on this page, which is undesirable, so, we want to make this panel behavior changed to be a persistent switch, that is:
+** DONE The panel is default on, now, we found it on even on the netflix home page, and can't be closed when on this page, which is undesirable, so, we want to make this panel behavior changed to be a persistent switch, that is:
 
 1. when we toggle it on, then it should stay on for any page, even if we have reloaded the page or jumped to another video
 2. when we toggle it off, then it should stay off
 3. We want a short-cut key to toggle it on/off, the command+shift-p key, that is, the command key on Mac, the shift key, and the "p" key.
+
+Implemented in v1.43:
+- Added persistent =panelOpen= state in =chrome.storage.sync= via =src/content/ui/panel.js=.
+- Startup now restores the saved panel state instead of always forcing it open, and never opens it on non-watch Netflix pages.
+- Popup toggle and =Command+Shift+P= now share the same persisted toggle path, so off stays off and on stays on across reloads/videos.
+
+** DONE when the netflix video enters full screen mode, the panel is gone, can you keep it toggeled on/off even if we enter/leave full screen?
+
+Implemented in v1.44:
+- Added fullscreen change handling in =src/content/ui/panel.js= to move the side panel and center translation overlay into =document.fullscreenElement= while fullscreen is active, then back to =document.body= afterward.
+- Re-applies the persisted =panelOpen= state after fullscreen enter/leave so the panel stays on/off according to the user's toggle.
+
+** DONE You should be a littli bit greedy when we are almost at the bottom and are soon to need to scroll, do not wait for the invisible subtitle to happen, scroll in advance by predicting it.
+
+For e.g., when the subtitle's bottom position is at >90% of the panel's bottom, scroll to the top.
+
+Implemented in v1.45:
+- Added =isElementNearViewBottom()= in =src/content/ui/subtitles.js= with a 90% viewport threshold.
+- =scrollCurrentToTopIfNeeded()= now scrolls the current subtitle to the panel top before appending when the current row is already near the visible bottom, not only when the scroll container is at its virtual bottom.
+
+** DONE When I click the MM:SS timestamp, the video start/continue playing, then if i press the space bar, the panel scrolls, this is not what I want, I want the video to pause playing, i.e., the input focus should be returned to the video after I click on panel subtitle timestamp.
+
+Fixed in v1.46:
+- Added =focusPlayer()= in =src/content/netflix/player.js= to blur the panel, clear selection, and focus the Netflix =video= element/player container without scrolling.
+- Timestamp click and row double-click seek paths in =src/content/ui/subtitles.js= now call =focusPlayer()= after =seekVideo()=, so Space goes back to Netflix playback control instead of scrolling the subtitle panel.
+
+** DONE The heuristics of 90% to scroll should be 85%, or maybe allow me to adjust in the popup.
+
+Implemented in v1.47:
+- Added =scrollThreshold= to =src/content/config.js= with default 85.
+- Added a popup slider "Panel scroll threshold" (60–95%) in =popup.html= / =popup.js=, saved to =chrome.storage.sync=.
+- =src/content/ui/subtitles.js= now uses the configured percentage instead of the previous hardcoded 90%.
+
+** DONE help me generate an AGENT.md for this project, write down what is generally needed in a AGENT.md for this kind of project.
+
+Then, git commit.
+
+Added =AGENT.md= with project-specific guidance for future agents: extension structure, content-script loading, =window.NST= module conventions, option wiring, validation expectations, README TODO workflow, and git hygiene.

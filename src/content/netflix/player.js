@@ -36,6 +36,24 @@
     return v || null;
   }
 
+  function focusPlayer() {
+    try {
+      const active = document.activeElement;
+      if (active && typeof active.blur === 'function') active.blur();
+    } catch(e){}
+    try {
+      const sel = window.getSelection && window.getSelection();
+      if (sel) sel.removeAllRanges();
+    } catch(e){}
+    const target = getVideoEl() || document.querySelector('.watch-video') || document.querySelector('.nf-player-container') || document.body;
+    try {
+      if (target && target.tabIndex < 0) target.tabIndex = -1;
+      if (target && typeof target.focus === 'function') target.focus({ preventScroll: true });
+    } catch(e) {
+      try { if (target && typeof target.focus === 'function') target.focus(); } catch(_){}
+    }
+  }
+
   /**
    * Get current video time in seconds
    */
@@ -228,6 +246,7 @@
     getNetflixVideoId: getNetflixVideoId,
     getCanonicalWatchUrl: getCanonicalWatchUrl,
     getVideoEl: getVideoEl,
+    focusPlayer: focusPlayer,
     getVideoTime: getVideoTime,
     getNetflixTitle: getNetflixTitle,
     injectNetflixSeekBridge: injectNetflixSeekBridge,

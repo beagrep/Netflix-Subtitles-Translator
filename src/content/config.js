@@ -43,7 +43,8 @@
 			overlayEnabled: true,
 			overlayPosition: 30,
 			overlaySize: 1.75,
-			overlayDuration: 5
+			overlayDuration: 5,
+			scrollThreshold: 85
 		},
 		SELECTORS: SELECTORS,
 		API_BASES: API_BASES
@@ -89,7 +90,8 @@
 			overlayEnabled: true,
 			overlayPosition: 30,
 			overlaySize: 1.75,
-			overlayDuration: 5
+			overlayDuration: 5,
+			scrollThreshold: 85
 		}, function(items) {
 			config.user.lang = items.lang;
 			config.user.srcLang = items.srcLang;
@@ -100,6 +102,7 @@
 			config.user.overlayPosition = items.overlayPosition;
 			config.user.overlaySize = items.overlaySize;
 			config.user.overlayDuration = items.overlayDuration;
+			config.user.scrollThreshold = items.scrollThreshold;
 			LOG('options loaded:', config.user);
 			if (callback) callback(config.user);
 		});

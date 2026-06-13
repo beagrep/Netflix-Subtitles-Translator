@@ -188,22 +188,65 @@
     };
   }
 
+  function isWatchPage() {
+    return /:\/\/[^/]*netflix\.com\/watch\//.test(window.location.href);
+  }
+
+  function scrollToBottom() {
+    try {
+      const sw = document.querySelector('#translate-ext #subtitle-wrap');
+      if (sw) requestAnimationFrame(function() { sw.scrollTop = sw.scrollHeight; });
+    } catch(e){}
+  }
+
+  function setPanelOpen(open, persist) {
+    if (open && !isWatchPage()) open = false;
+    document.body.classList.toggle('open-tr-panel', !!open);
+    if (open) scrollToBottom();
+    if (persist) {
+      try { chrome.storage.sync.set({ panelOpen: !!open }); } catch(e){}
+    }
+  }
+
+  function restorePanelOpen() {
+    try {
+      chrome.storage.sync.get({ panelOpen: true }, function(items) {
+        setPanelOpen(!!items.panelOpen, false);
+      });
+    } catch(e) {
+      setPanelOpen(true, false);
+    }
+  }
+
+  function movePanelIntoFullscreenRoot() {
+    const root = document.fullscreenElement || document.webkitFullscreenElement || document.body;
+    const frame = document.getElementById(config.SELECTORS.mainWrap);
+    const center = document.getElementById(config.SELECTORS.mainTranslateId);
+    if (frame && frame.parentNode !== root) root.appendChild(frame);
+    if (center && center.parentNode !== root) root.appendChild(center);
+    restorePanelOpen();
+  }
+
+  function setupFullscreenSync() {
+    document.addEventListener('fullscreenchange', movePanelIntoFullscreenRoot);
+    document.addEventListener('webkitfullscreenchange', movePanelIntoFullscreenRoot);
+  }
+
   /**
    * Toggle the panel open/closed
    */
   function togglePanel() {
-    const bdclist = document.body.classList;
-    if (bdclist.contains('open-tr-panel')) {
-      bdclist.remove('open-tr-panel');
-    } else {
-      bdclist.add('open-tr-panel');
-      try {
-        const sw = document.querySelector('#translate-ext #subtitle-wrap');
-        if (sw) {
-          requestAnimationFrame(function() { sw.scrollTop = sw.scrollHeight; });
-        }
-      } catch(e){}
-    }
+    setPanelOpen(!document.body.classList.contains('open-tr-panel'), true);
+  }
+
+  function setupKeyboardShortcut() {
+    document.addEventListener('keydown', function(e) {
+      if (e.metaKey && e.shiftKey && !e.ctrlKey && !e.altKey && e.key && e.key.toLowerCase() === 'p') {
+        e.preventDefault();
+        e.stopPropagation();
+        togglePanel();
+      }
+    }, true);
   }
 
   /**
@@ -218,8 +261,13 @@
   NST.ui.panel = {
     createTapeWrap: createTapeWrap,
     applyPanelWidth: applyPanelWidth,
+    restorePanelOpen: restorePanelOpen,
+    setPanelOpen: setPanelOpen,
+    setupKeyboardShortcut: setupKeyboardShortcut,
+    setupFullscreenSync: setupFullscreenSync,
     togglePanel: togglePanel,
-    isPanelOpen: isPanelOpen
+    isPanelOpen: isPanelOpen,
+    isWatchPage: isWatchPage
   };
 
 })(window.NST = window.NST || {});
