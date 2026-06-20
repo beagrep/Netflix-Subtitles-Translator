@@ -393,7 +393,7 @@
     if (el.classList.contains(S.translatedSentence)) return;
 
     // If dd already has translation (from import), just show it, don't re-translate
-    const dd = el.querySelector('dd');
+    let dd = el.querySelector('dd');
     if (dd && dd.textContent && dd.textContent.trim()) {
       el.classList.add(S.translatedSentence);
       return;
@@ -422,7 +422,7 @@
           if (!data) return;
           let gtrans = '';
           data['sentences'].forEach(function(s) { gtrans += s.trans + ' '; });
-          const dd = el.querySelector('dd');
+          dd = el.querySelector('dd');
           if (dd) dd.innerHTML = gtrans.trim().replace(/\r?\n/g, '<br>');
         });
       }
@@ -444,7 +444,7 @@
         }
         completed++;
         if (completed === lines.length) {
-          const dd = el.querySelector('dd');
+          dd = el.querySelector('dd');
           if (dd) dd.innerHTML = translatedLines.join('<br>');
         }
       });

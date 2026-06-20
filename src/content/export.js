@@ -93,6 +93,7 @@
     const db = NST.db || null;
     const translator = NST.translator || null;
     const subtitlesUI = NST.ui ? NST.ui.subtitles : null;
+    const player = NST.netflix && NST.netflix.player ? NST.netflix.player : null;
 
     if (!db || !videoId) {
       if (callback) callback({ ok: false, error: 'DB not available or no video ID' });
@@ -130,20 +131,35 @@
           const tgt = config.user.lang || 'en';
           db.setCachedTranslation(src, tgt, entry.original, entry.translation);
 
-          // Update in-memory capture if present
-          if (translator) {
-            const capture = translator.findExistingCapture(entry.original, entry.videoTime);
-            if (capture) {
-              capture.translation = entry.translation;
-              capture.status = 'ok';
-              if (capture.dl && subtitlesUI) {
-                subtitlesUI.applyTranslation(capture.dl, entry.translation);
-              }
-            }
-          }
-
           updated++;
         });
+
+        // Now, reload all subtitles from DB for this video
+        if (translator && subtitlesUI) {
+          // Clear current captures and UI
+          translator.clearCaptures();
+          subtitlesUI.clearAll();
+          // Make sure currentVideoId is set correctly
+          if (translator.setCurrentVideoId) {
+            translator.setCurrentVideoId(videoId);
+          }
+          // Load from DB
+          translator.loadVideoSubtitles(videoId, function(loadedEntries) {
+            if (loadedEntries && loadedEntries.length) {
+              LOG('Import: reloading', loadedEntries.length, 'entries from DB');
+              loadedEntries.forEach(function(capture) {
+                translator.addCapture(capture);
+                // Add to UI
+                const dl = subtitlesUI.add(capture.original, capture.videoTime);
+                capture.dl = dl;
+                // Apply translation if available
+                if (capture.translation) {
+                  subtitlesUI.applyTranslation(dl, capture.translation);
+                }
+              });
+            }
+          });
+        }
 
         // Force a DB save
         db.scheduleSave();

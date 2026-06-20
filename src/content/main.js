@@ -299,7 +299,16 @@ chrome.runtime.onMessage.addListener(
     if (request.importOrg) {
       try {
         if (typeof window.__nstImportOrg === 'function') {
-          const videoId = player ? player.getNetflixVideoId() : null;
+          // Try to get videoId from player module, or directly from URL as fallback
+          let videoId = null;
+          if (player && player.getNetflixVideoId) {
+            videoId = player.getNetflixVideoId();
+          }
+          // Fallback: get from URL directly if player module isn't available
+          if (!videoId) {
+            const match = window.location.pathname.match(/\/watch\/(\d+)/);
+            videoId = match ? match[1] : null;
+          }
           if (!videoId) {
             sendResponse({ ok: false, error: 'Open a Netflix video first.' });
             return true;

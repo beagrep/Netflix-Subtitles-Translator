@@ -971,3 +971,9 @@ For e.g., I have a saved .org at ~/Downloads/Netflix-2026-06-19T14-49-06-964Z.or
 You should add a button to the pop-up menu, so that I can load the revised .org file, so that next time I watch the video, all the subtitles don't need translate again.
 
 Even if I click on a subtitle, do not translate if it is already translated, or else my revised translation might be replaced with poor google translation.
+
+* DONE some thing went wrong, now the panel can be switched on, but can't switch off, and no translation is show at all.
+
+When I click the upload button, after I select file and confirm, the pop-up windows says "open netflix first".
+
+Fixed duplicate `const dd` declaration in `subtitles.js` which was causing a syntax error and breaking the whole module. Added fallback to get videoId directly from URL in import message handler in case player module isn't available yet. Also improved import to reload all subtitles from DB after import, so new imported subtitles show up immediately.
