@@ -23,6 +23,7 @@
   let launched = false;
   let subtitleBefore = '';
   let wait = false;
+  let videoId = null;
 
   /**
    * Expose clear subtitle DB function to window
@@ -159,7 +160,7 @@
       subtitlesUI.setTranslatePanel(translatePanel);
     }
 
-    const videoId = player ? player.getNetflixVideoId() : null;
+    videoId = player ? player.getNetflixVideoId() : null;
     LOG('Netflix videoId =', videoId);
 
     // Set current video ID - clears old captures if switching

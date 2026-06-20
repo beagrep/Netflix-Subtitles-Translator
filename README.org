@@ -1018,3 +1018,14 @@ Fixed by moving the `chrome.runtime.onMessage` listener *inside* the IIFE in `sr
 - 只要字幕出现在面板里，就会立即保存到 SQLite 数据库
 - 换视频/刷新页面后，之前的字幕都会保留
 - 导出时会导出面板里显示的所有字幕
+
+* DONE 现在不太对了，有几个问题，你帮忙排查一下：
+
+1. 不会自动翻译了，必须我手动在 Panel 上点击才会翻译
+
+** 修复内容：
+
+问题原因是在 `readAndHandle()` 函数里访问了未定义的 `videoId` 变量（它是在 `run()` 函数里定义的局部变量），这会抛出 `ReferenceError`，导致后续代码（包括 `autoTranslate`）都不会执行。
+
+修复方法：把 `videoId` 提升为模块级别的全局变量。
+
