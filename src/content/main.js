@@ -101,6 +101,12 @@
           centerTranslator.showTranslation(dup.translation);
         }
         subtitleBefore = subtitle;
+
+        // Make sure this subtitle is saved to database (in case it was missing)
+        if (db && videoId && typeof vt === 'number') {
+          const status = dup.translation && dup.translation.trim() ? 'ok' : 'pending';
+          db.recordSubtitle(videoId, vt, subtitle, dup.translation || null, status);
+        }
         return;
       }
 
@@ -123,6 +129,13 @@
       }
 
       subtitleBefore = subtitle;
+
+      // Immediately save subtitle to database (even before translation!)
+      if (db && videoId && typeof vt === 'number') {
+        // Save with pending status, or ok if we already have a translation
+        const status = entry.translation && entry.translation.trim() ? 'ok' : 'pending';
+        db.recordSubtitle(videoId, vt, subtitle, entry.translation || null, status);
+      }
 
       // Auto-translate
       if (translator) {
@@ -255,6 +268,16 @@
       window.__nstCaptures = translator.getCaptures();
     }
 
+    // Save database before page unload
+    window.addEventListener('beforeunload', function() {
+      if (db && db.saveNow) {
+        // Try to save synchronously if possible
+        try {
+          db.saveNow();
+        } catch(e) {}
+      }
+    });
+
     // Start polling
     pollForSubtitles();
   }
@@ -273,80 +296,80 @@
     isLaunched: function() { return launched; }
   };
 
+  /**
+   * Message listener for communication with popup/background
+   */
+  chrome.runtime.onMessage.addListener(
+    function(request, sender, sendResponse) {
+      try { console.log('[NST] message:', request); } catch(e){}
+
+      if (request.buttonClick) {
+        if (NST.ui && NST.ui.panel) NST.ui.panel.togglePanel();
+      }
+
+      if (request.exportOrg) {
+        try {
+          let result = (typeof window.__nstExportOrg === 'function') ? window.__nstExportOrg() : { ok: false, error: 'Extension not initialized on this page.' };
+          sendResponse(result);
+        } catch(e) {
+          sendResponse({ ok: false, error: 'Export error: ' + (e && e.message) });
+        }
+        return true;
+      }
+
+      if (request.importOrg) {
+        try {
+          if (typeof window.__nstImportOrg === 'function') {
+            // Try to get videoId from player module, or directly from URL as fallback
+            let videoId = null;
+            if (player && player.getNetflixVideoId) {
+              videoId = player.getNetflixVideoId();
+            }
+            // Fallback: get from URL directly if player module isn't available
+            if (!videoId) {
+              const match = window.location.pathname.match(/\/watch\/(\d+)/);
+              videoId = match ? match[1] : null;
+            }
+            if (!videoId) {
+              sendResponse({ ok: false, error: 'Open a Netflix video first.' });
+              return true;
+            }
+            window.__nstImportOrg(request.importOrg, videoId, sendResponse);
+            return true; // Keep message channel open for async response
+          } else {
+            sendResponse({ ok: false, error: 'Extension not initialized on this page.' });
+          }
+        } catch(e) {
+          sendResponse({ ok: false, error: 'Import error: ' + (e && e.message) });
+        }
+        return true;
+      }
+
+      if (request.clearSubtitleDB) {
+        try {
+          if (typeof window.__nstClearSubtitleDB === 'function') {
+            window.__nstClearSubtitleDB(sendResponse);
+            return true; // Keep message channel open for async response
+          } else {
+            sendResponse({ ok: false, error: 'Extension not initialized on this page.' });
+          }
+        } catch(e) {
+          sendResponse({ ok: false, error: 'Clear error: ' + (e && e.message) });
+        }
+        return true;
+      }
+
+      if (request.updateOverlaySettings) {
+        // Reload options and apply to overlay
+        if (config && config.getOptions) {
+          config.getOptions(function() {
+            if (centerTranslator && centerTranslator.applySettings) {
+              centerTranslator.applySettings();
+            }
+          });
+        }
+      }
+    }
+  );
+
 })(window.NST = window.NST || {});
-
-/**
- * Message listener for communication with popup/background
- */
-chrome.runtime.onMessage.addListener(
-  function(request, sender, sendResponse) {
-    try { console.log('[NST] message:', request); } catch(e){}
-
-    if (request.buttonClick) {
-      if (NST.ui && NST.ui.panel) NST.ui.panel.togglePanel();
-    }
-
-    if (request.exportOrg) {
-      try {
-        let result = (typeof window.__nstExportOrg === 'function') ? window.__nstExportOrg() : { ok: false, error: 'Extension not initialized on this page.' };
-        sendResponse(result);
-      } catch(e) {
-        sendResponse({ ok: false, error: 'Export error: ' + (e && e.message) });
-      }
-      return true;
-    }
-
-    if (request.importOrg) {
-      try {
-        if (typeof window.__nstImportOrg === 'function') {
-          // Try to get videoId from player module, or directly from URL as fallback
-          let videoId = null;
-          if (player && player.getNetflixVideoId) {
-            videoId = player.getNetflixVideoId();
-          }
-          // Fallback: get from URL directly if player module isn't available
-          if (!videoId) {
-            const match = window.location.pathname.match(/\/watch\/(\d+)/);
-            videoId = match ? match[1] : null;
-          }
-          if (!videoId) {
-            sendResponse({ ok: false, error: 'Open a Netflix video first.' });
-            return true;
-          }
-          window.__nstImportOrg(request.importOrg, videoId, sendResponse);
-          return true; // Keep message channel open for async response
-        } else {
-          sendResponse({ ok: false, error: 'Extension not initialized on this page.' });
-        }
-      } catch(e) {
-        sendResponse({ ok: false, error: 'Import error: ' + (e && e.message) });
-      }
-      return true;
-    }
-
-    if (request.clearSubtitleDB) {
-      try {
-        if (typeof window.__nstClearSubtitleDB === 'function') {
-          window.__nstClearSubtitleDB(sendResponse);
-          return true; // Keep message channel open for async response
-        } else {
-          sendResponse({ ok: false, error: 'Extension not initialized on this page.' });
-        }
-      } catch(e) {
-        sendResponse({ ok: false, error: 'Clear error: ' + (e && e.message) });
-      }
-      return true;
-    }
-
-    if (request.updateOverlaySettings) {
-      // Reload options and apply to overlay
-      if (config && config.getOptions) {
-        config.getOptions(function() {
-          if (centerTranslator && centerTranslator.applySettings) {
-            centerTranslator.applySettings();
-          }
-        });
-      }
-    }
-  }
-);

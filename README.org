@@ -977,3 +977,44 @@ Even if I click on a subtitle, do not translate if it is already translated, or 
 When I click the upload button, after I select file and confirm, the pop-up windows says "open netflix first".
 
 Fixed duplicate `const dd` declaration in `subtitles.js` which was causing a syntax error and breaking the whole module. Added fallback to get videoId directly from URL in import message handler in case player module isn't available yet. Also improved import to reload all subtitles from DB after import, so new imported subtitles show up immediately.
+
+* DONE Still got error: 'player is not defined' when I upload revision.
+
+Fixed by moving the `chrome.runtime.onMessage` listener *inside* the IIFE in `src/content/main.js` so it has access to the `player` variable. The listener was previously defined outside the IIFE scope and couldn't access the module variables.
+
+* DONE 在左边的 panel 里，整个右边都变成了拖拽改变大小的热点区域，希望将其改为更符合常见视窗类产品 UI/UX 设计，尤其是有一个显示当前上下位置的滑块，在这个滑块上点击的话，希望其行为是通过拖动其位置，快速改变上下的滚动，而不是继续缩放 Panel 大小。
+
+修复了 resize handle 覆盖滚动条的问题。修改内容：
+- =src/content/ui/panel.js=: 调整 =applyPanelWidth= 函数，让内容区域比面板窄 8px，为右侧的 resize handle 留出空间
+- =style.css=: 更新 CSS，让内容区域默认位置在左侧，resize handle 在右侧；同时让 resize handle 有更明显的视觉提示（左侧有边框线）
+
+* DONE 你的上传解析逻辑有问题，对于多行的字幕，会将其断行 import 成没有时间戳信息，直接变成 00:00 的字幕，这是不对的，应该在下一行甚至更下一行查找，直到找到时间戳为止。
+
+#+begin_src org
+  ,* 한데 어찌 그런
+   흉측한 풍문이 나도는 건지 [2:43]
+#+end_src
+
+修复了 =src/content/export.js= 中的 =parseOrgFile= 函数：
+- 重写了解析逻辑，可以处理多行字幕
+- 时间戳可以出现在第一行，也可以出现在后续任何一行
+- 会正确合并多行的原始字幕文本
+- 空行之后的内容会被识别为翻译文本
+
+* DONE 我现在发现保存的时候会少了一些刚补上的字幕，帮我查一下是什么原因，我的我的测试过程是这样的。我先看完了一遍这个视频后里面的字幕基本上都加载的差不多了。但是一开头可能少了一些字幕后我把它保存出来后进行校正。最后又重新上传且我想把前面的缺了的那些给它补回去。但是我重新从头播放实补上了在那个面板里头已经能看到。但是我想保存的时候发现它保存下来的并不完整是少了一些东西。它跟面板里显示的并不一致以需要你帮我查一下到底是哪里出了问题。
+
+我觉得你最好是要确认一下是说一条新出现的字母在添加到面板之后实我就希望你给我保存到那个数据库里头。我现在不知道你保存数据库的时机是怎么样的。我经常会发现其实是希望已经持久化久保存的东西是我换一个视频或者重新切回来发现已经没有了。这样其实是会浪费我的时间为我已经观看过的视频存下来的字母没帮我保存。对个是最理想的。甚至我在觉得其实是那个数据库次保存下来的字母也可以接受的。
+
+** 修复内容：
+
+1. =src/content/main.js=: 每条字幕在面板显示后立即保存到数据库（不需要等翻译完成）
+2. =src/content/main.js=: 即使是重复出现的字幕，也会确保数据库里有记录
+3. =src/content/translator.js=: 确保所有字幕条目都正确设置 =videoId=，导出时只包含当前视频的字幕
+4. =src/content/db.js=: 新增 =saveNow()= 函数用于立即保存数据库
+5. =src/content/main.js=: 添加 =beforeunload= 事件监听器，页面关闭前自动保存数据库
+6. =src/content/export.js=: 导出字幕前先确保保存数据库
+
+现在的行为：
+- 只要字幕出现在面板里，就会立即保存到 SQLite 数据库
+- 换视频/刷新页面后，之前的字幕都会保留
+- 导出时会导出面板里显示的所有字幕

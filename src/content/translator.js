@@ -31,7 +31,17 @@
    */
   function getCapturesForCurrentVideo() {
     if (!currentVideoId) return captures;
-    return captures.filter(function(c) { return c.videoId === currentVideoId; });
+
+    // Ensure all captures have videoId set first
+    captures.forEach(function(c) {
+      if (!c.videoId) {
+        c.videoId = currentVideoId;
+      }
+    });
+
+    return captures.filter(function(c) {
+      return c.videoId === currentVideoId;
+    });
   }
 
   /**
@@ -63,6 +73,7 @@
    * Add a capture entry
    */
   function addCapture(capture) {
+    // Always set the videoId if we have one
     if (currentVideoId) {
       capture.videoId = currentVideoId;
     }

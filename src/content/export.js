@@ -18,69 +18,122 @@
   const getCaptures = NST.translator ? NST.translator.getCaptures : function() { return []; };
 
   /**
+   * Parse a time string like [M:SS], [MM:SS], [H:MM:SS], [HH:MM:SS] into seconds
+   */
+  function parseTimeStr(timeStr) {
+    if (!timeStr) return null;
+    const parts = timeStr.split(':').map(Number);
+    // Check if all parts are valid numbers
+    if (parts.some(isNaN)) return null;
+    if (parts.length === 2) {
+      return parts[0] * 60 + parts[1];
+    } else if (parts.length === 3) {
+      return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    }
+    return null;
+  }
+
+  /**
    * Parse an org file content and extract subtitle entries
    */
   function parseOrgFile(content) {
     const entries = [];
     const lines = content.split(/\r?\n/);
-    let currentEntry = null;
     let inHeader = true;
+    let i = 0;
 
-    for (let i = 0; i < lines.length; i++) {
+    while (i < lines.length) {
       const line = lines[i];
 
       // Skip header lines (start with #+)
       if (inHeader && line.match(/^#\+/)) {
+        i++;
         continue;
       }
       inHeader = false;
 
-      // Check for a new heading (* Original subtitle [time])
-      const headingMatch = line.match(/^\*\s+(.+?)(?:\s+\[([^\]]+)\])?\s*$/);
+      // Check for a new heading (* Original subtitle)
+      const headingMatch = line.match(/^\*\s+(.*?)\s*$/);
       if (headingMatch) {
-        // Push previous entry if exists
-        if (currentEntry) {
-          entries.push(currentEntry);
-        }
-        // Start new entry
-        const original = headingMatch[1].replace(/\\\*/g, '*'); // Unescape any escaped asterisks
-        const timeStr = headingMatch[2];
+        // Start collecting original subtitle lines
+        const originalLines = [];
         let videoTime = null;
 
-        // Parse time string if present (MM:SS or HH:MM:SS)
-        if (timeStr) {
-          const parts = timeStr.split(':').map(Number);
-          if (parts.length === 2) {
-            videoTime = parts[0] * 60 + parts[1];
-          } else if (parts.length === 3) {
-            videoTime = parts[0] * 3600 + parts[1] * 60 + parts[2];
-          }
+        // Add the first line (without the *)
+        let firstLine = headingMatch[1].replace(/\\\*/g, '*');
+
+        // Check if first line has a timestamp
+        const firstLineTimeMatch = firstLine.match(/^(.*?)\s+\[([^\]]+)\]\s*$/);
+        if (firstLineTimeMatch) {
+          firstLine = firstLineTimeMatch[1];
+          videoTime = parseTimeStr(firstLineTimeMatch[2]);
+        }
+        if (firstLine.trim()) {
+          originalLines.push(firstLine);
         }
 
-        currentEntry = {
-          original: original,
-          videoTime: videoTime,
-          translation: ''
+        i++; // Move past the heading line
+
+        // Continue reading lines until we hit the next heading or find translation
+        let translationStarted = false;
+        const translationLines = [];
+
+        while (i < lines.length) {
+          const nextLine = lines[i];
+
+          // Check if this is a new heading — stop if yes
+          if (nextLine.match(/^\*\s+/)) {
+            break;
+          }
+
+          // Check if we haven't found timestamp yet and this line has one
+          if (!videoTime && !translationStarted) {
+            const timeMatch = nextLine.match(/^(.*?)\s+\[([^\]]+)\]\s*$/);
+            if (timeMatch) {
+              // Found a timestamp on this line
+              const textPart = timeMatch[1].replace(/\\\*/g, '*');
+              if (textPart.trim()) {
+                originalLines.push(textPart);
+              }
+              videoTime = parseTimeStr(timeMatch[2]);
+              i++;
+              continue;
+            }
+          }
+
+          // If it's an empty line and we haven't started translation yet,
+          // this might be the separator between original and translation
+          if (!nextLine.trim() && !translationStarted && originalLines.length > 0) {
+            translationStarted = true;
+            i++;
+            continue;
+          }
+
+          // If translation has started, or we already have a timestamp and
+          // this isn't a heading, add to translation (or original if no
+          // separator found yet but we have a timestamp)
+          if (translationStarted || videoTime !== null) {
+            translationStarted = true;
+            translationLines.push(nextLine);
+          } else {
+            // No timestamp yet, still collecting original lines
+            originalLines.push(nextLine.replace(/\\\*/g, '*'));
+          }
+
+          i++;
+        }
+
+        // Create the entry
+        const entry = {
+          original: originalLines.join('\n'),
+          videoTime: videoTime !== null ? videoTime : 0, // Fallback to 0 if no timestamp found
+          translation: translationLines.join('\n').trim()
         };
+        entries.push(entry);
         continue;
       }
 
-      // If we have a current entry, accumulate translation text
-      if (currentEntry) {
-        // Skip empty lines at the start
-        if (!line.trim() && !currentEntry.translation) {
-          continue;
-        }
-        // Add to translation with newline (trim trailing newlines later)
-        currentEntry.translation += (currentEntry.translation ? '\n' : '') + line;
-      }
-    }
-
-    // Push the last entry
-    if (currentEntry) {
-      // Trim trailing whitespace from translation
-      currentEntry.translation = currentEntry.translation.trim();
-      entries.push(currentEntry);
+      i++;
     }
 
     return entries;
@@ -203,6 +256,11 @@
    * Export subtitles and trigger download
    */
   function exportOrg() {
+    // Save database first to ensure everything is persisted
+    if (NST.db && NST.db.saveNow) {
+      try { NST.db.saveNow(); } catch(e) {}
+    }
+
     const getCapturesForCurrentVideo = NST.translator ? NST.translator.getCapturesForCurrentVideo : null;
     const captures = getCapturesForCurrentVideo ? getCapturesForCurrentVideo() : getCaptures();
     if (!captures.length) return { ok: false, error: 'No subtitles captured yet.' };

@@ -116,6 +116,29 @@
   }
 
   /**
+   * Save the database immediately (not debounced)
+   */
+  function saveNow(callback) {
+    if (!ready) {
+      if (callback) callback();
+      return;
+    }
+    try {
+      const bytes = db.export();
+      const obj = {};
+      obj[NST_DB_KEY] = { bytes: Array.from(bytes), savedAt: Date.now() };
+      chrome.storage.local.set(obj, function() {
+        if (chrome.runtime.lastError) WARN('nstDB save error:', chrome.runtime.lastError.message);
+        else LOG('nstDB saved immediately, bytes:', bytes.length);
+        if (callback) callback();
+      });
+    } catch(e) {
+      WARN('nstDB export failed:', e && e.message);
+      if (callback) callback();
+    }
+  }
+
+  /**
    * Schedule a database save (debounced)
    */
   function scheduleSave() {
@@ -123,15 +146,7 @@
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(function() {
       saveTimer = null;
-      try {
-        const bytes = db.export();
-        const obj = {};
-        obj[NST_DB_KEY] = { bytes: Array.from(bytes), savedAt: Date.now() };
-        chrome.storage.local.set(obj, function() {
-          if (chrome.runtime.lastError) WARN('nstDB save error:', chrome.runtime.lastError.message);
-          else LOG('nstDB saved, bytes:', bytes.length);
-        });
-      } catch(e) { WARN('nstDB export failed:', e && e.message); }
+      saveNow();
     }, 2000);
   }
 
@@ -200,6 +215,22 @@
         stmt.free();
         scheduleSave();
       } catch(e) { WARN('recordSubtitle:', e && e.message); }
+    });
+  }
+
+  /**
+   * Update a subtitle with a revised translation (always replaces existing)
+   */
+  function updateSubtitleTranslation(videoId, videoTime, original, translation) {
+    whenReady(function() {
+      try {
+        const now = Date.now();
+        // Use INSERT OR REPLACE to ensure our revised translation replaces the old one
+        const stmt = db.prepare('INSERT OR REPLACE INTO subtitles(video_id,video_time,original,translation,status,attempts,last_attempt) VALUES (?,?,?,?,?,?,?)');
+        stmt.run([videoId, videoTime, original, translation, 'ok', 0, now]);
+        stmt.free();
+        scheduleSave();
+      } catch(e) { WARN('updateSubtitleTranslation:', e && e.message); }
     });
   }
 
@@ -283,9 +314,11 @@
     setCachedTranslation: setCachedTranslation,
     upsertVideo: upsertVideo,
     recordSubtitle: recordSubtitle,
+    updateSubtitleTranslation: updateSubtitleTranslation,
     loadVideoSubtitles: loadVideoSubtitles,
     clearVideoSubtitles: clearVideoSubtitles,
-    scheduleSave: scheduleSave
+    scheduleSave: scheduleSave,
+    saveNow: saveNow
   };
 
   // Initialize when DOM is ready (or immediately)

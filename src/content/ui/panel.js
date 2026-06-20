@@ -44,9 +44,13 @@
     frame.style.maxWidth = 'none';
     frame.querySelectorAll(':scope > *').forEach(function(child) {
       if (child.id === 'translate-ext-resize-handle') return;
-      child.style.width = px + 'px';
+      // Make content 8px narrower to leave space for resize handle on the right
+      child.style.width = (px - 8) + 'px';
       child.style.minWidth = '0';
       child.style.maxWidth = 'none';
+      child.style.position = 'absolute';
+      child.style.left = '0';
+      child.style.top = '0';
     });
     try {
       const sw = document.querySelector('.sizing-wrapper');
