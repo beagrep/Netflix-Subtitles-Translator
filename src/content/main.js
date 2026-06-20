@@ -149,6 +149,11 @@
     const videoId = player ? player.getNetflixVideoId() : null;
     LOG('Netflix videoId =', videoId);
 
+    // Set current video ID - clears old captures if switching
+    if (translator && translator.setCurrentVideoId) {
+      translator.setCurrentVideoId(videoId);
+    }
+
     // Upsert video in DB
     if (videoId && db && player) {
       db.upsertVideo(
@@ -287,6 +292,25 @@ chrome.runtime.onMessage.addListener(
         sendResponse(result);
       } catch(e) {
         sendResponse({ ok: false, error: 'Export error: ' + (e && e.message) });
+      }
+      return true;
+    }
+
+    if (request.importOrg) {
+      try {
+        if (typeof window.__nstImportOrg === 'function') {
+          const videoId = player ? player.getNetflixVideoId() : null;
+          if (!videoId) {
+            sendResponse({ ok: false, error: 'Open a Netflix video first.' });
+            return true;
+          }
+          window.__nstImportOrg(request.importOrg, videoId, sendResponse);
+          return true; // Keep message channel open for async response
+        } else {
+          sendResponse({ ok: false, error: 'Extension not initialized on this page.' });
+        }
+      } catch(e) {
+        sendResponse({ ok: false, error: 'Import error: ' + (e && e.message) });
       }
       return true;
     }

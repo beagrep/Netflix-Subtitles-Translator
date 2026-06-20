@@ -953,3 +953,21 @@ Added =AGENT.md= with project-specific guidance for future agents: extension str
 ** DONE what kind of general pre-commit hooks are recommended for my project? add them.
 
 Added =.pre-commit-config.yaml= with local no-network hooks for JSON syntax, merge-conflict markers, final newline, trailing whitespace, mixed line endings, and =node --check= for JavaScript.  Updated =AGENT.md= to mention =pre-commit run --all-files= and normalized existing whitespace/final-newline issues so the hook suite passes.
+
+* DONE Here, there are 2 todo tasks, do them one-by-one.
+
+** DONE When I save note, I noticed that more than 1 movie's subtitles are saved together, please don't do this, each movie should be saved into its separate DB table, and when saving .org file, only save subtitles for the current video.
+
+Modified the translator module to track =currentVideoId= and clear the in-memory =captures= when switching videos. Added =getCapturesForCurrentVideo()= to filter only the current video's subtitles, updated =exportOrg= and =buildOrgExport= to use it.
+
+** DONE Should allow to upload/load my own revised subtitle translation from a .org file, this way, helps me learn languages more easily.
+
+Added import functionality in =export.js=: =parseOrgFile= reads org files back into subtitle entries, =importOrg= updates the DB and in-memory captures with revised translations. Added "Import revised subtitles" button to popup with file input handler. Also modified =autoTranslate= to skip translation when a capture already has a translation with status 'ok', and modified the click-to-translate handler to skip when the dd already has content (and just show it instead).
+
+The Google translation is too lousy, need revise using LLM, which I have already done.
+
+For e.g., I have a saved .org at ~/Downloads/Netflix-2026-06-19T14-49-06-964Z.org, its revised translations at ~/Downloads/Revised-Netflix-2026-06-19T14-49-06-964Z.org
+
+You should add a button to the pop-up menu, so that I can load the revised .org file, so that next time I watch the video, all the subtitles don't need translate again.
+
+Even if I click on a subtitle, do not translate if it is already translated, or else my revised translation might be replaced with poor google translation.

@@ -392,6 +392,13 @@
     if (!el) return;
     if (el.classList.contains(S.translatedSentence)) return;
 
+    // If dd already has translation (from import), just show it, don't re-translate
+    const dd = el.querySelector('dd');
+    if (dd && dd.textContent && dd.textContent.trim()) {
+      el.classList.add(S.translatedSentence);
+      return;
+    }
+
     // Get the original sentence from the dt element
     const dt = el.querySelector('dt');
     if (!dt) return;

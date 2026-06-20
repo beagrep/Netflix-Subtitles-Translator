@@ -109,6 +109,37 @@
 		});
 	});
 
+	document.querySelector('#import').addEventListener('click', function() {
+		document.querySelector('#import-file').click();
+	});
+
+	document.querySelector('#import-file').addEventListener('change', function(e) {
+		var file = e.target.files[0];
+		if (!file) return;
+
+		var reader = new FileReader();
+		reader.onload = function(ev) {
+			var content = ev.target.result;
+			chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
+				if (!tabs[0]) return;
+				chrome.tabs.sendMessage(tabs[0].id, { importOrg: content }, function(resp) {
+					if (chrome.runtime.lastError) {
+						flashStatus('Open Netflix first.');
+						return;
+					}
+					if (resp && resp.ok) {
+						flashStatus('Imported ' + resp.count + ' subtitles.');
+					} else {
+						flashStatus(resp && resp.error ? resp.error : 'Import failed.');
+					}
+				});
+			});
+		};
+		reader.readAsText(file);
+		// Reset the file input so the same file can be selected again
+		e.target.value = '';
+	});
+
 	document.querySelector('#clear-db').addEventListener('click', function() {
 		chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
 			if (!tabs[0]) return;

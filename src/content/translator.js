@@ -13,6 +13,7 @@
 
   // In-memory captures
   let captures = [];
+  let currentVideoId = null;
 
   // Retry queue state
   let retryQueue = [];
@@ -26,6 +27,32 @@
   }
 
   /**
+   * Get captures only for the current video
+   */
+  function getCapturesForCurrentVideo() {
+    if (!currentVideoId) return captures;
+    return captures.filter(function(c) { return c.videoId === currentVideoId; });
+  }
+
+  /**
+   * Set current video ID and clear captures if switching videos
+   */
+  function setCurrentVideoId(videoId) {
+    if (currentVideoId !== videoId) {
+      LOG('Switching video from', currentVideoId, 'to', videoId, '- clearing captures');
+      currentVideoId = videoId;
+      clearCaptures();
+    }
+  }
+
+  /**
+   * Get current video ID
+   */
+  function getCurrentVideoId() {
+    return currentVideoId;
+  }
+
+  /**
    * Clear all in-memory captures
    */
   function clearCaptures() {
@@ -36,6 +63,9 @@
    * Add a capture entry
    */
   function addCapture(capture) {
+    if (currentVideoId) {
+      capture.videoId = currentVideoId;
+    }
     captures.push(capture);
     return capture;
   }
@@ -104,6 +134,13 @@
    */
   function autoTranslate(sentence, capture, doneCallback) {
     if (!sentence) { if (doneCallback) doneCallback(); return; }
+
+    // If we already have a translation (revised one from imported file), don't re-translate
+    if (capture && capture.translation && capture.translation.trim() && capture.status === 'ok') {
+      LOG('Already have a translation for this subtitle, skipping auto-translate');
+      if (doneCallback) doneCallback();
+      return;
+    }
 
     const src = config.user.srcLang || 'auto';
     const tgt = config.user.lang || 'en';
@@ -325,7 +362,10 @@
   // Export public API
   NST.translator = {
     getCaptures: getCaptures,
+    getCapturesForCurrentVideo: getCapturesForCurrentVideo,
     clearCaptures: clearCaptures,
+    setCurrentVideoId: setCurrentVideoId,
+    getCurrentVideoId: getCurrentVideoId,
     addCapture: addCapture,
     findExistingCapture: findExistingCapture,
     transCacheGet: transCacheGet,
