@@ -40,8 +40,8 @@
     },
     "manifest_version": 2,
     "name": "Netflix Subtitles Translator",
-    "permissions": [ "contextMenus", "tabs", "storage" ],
+    "permissions": [ "contextMenus", "tabs", "storage", "unlimitedStorage" ],
     "short_name": "Netflix Subtitles Translator",
     "update_url": "https://clients3.google.com/service/update2/crx",
-    "version": "1.50"
+    "version": "1.51"
 }

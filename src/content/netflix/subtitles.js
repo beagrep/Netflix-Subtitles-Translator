@@ -17,11 +17,6 @@
     const seen = new Set();
 
     try {
-      // Log the container structure for debugging
-      try {
-        LOG('subtitle container HTML:', container.innerHTML.substring(0, 500));
-      } catch(e) {}
-
       // Strategy 0: Look for <br> tags explicitly - this is the most reliable
       try {
         // Clone the container to avoid modifying the real DOM

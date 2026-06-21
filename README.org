@@ -1113,3 +1113,145 @@ Usage:
 3. In Netflix player menu, select the source subtitle language first, wait a moment
 4. Then select the target subtitle language, wait a moment
 5. The panel will populate with all available bilingual subtitles automatically
+
+* DONE can't find official subtitles, even from console, we can see that we have requested 2 subtitles, one for japanese, one for chinese.
+
+Popup 中显示「未找到字幕语言」，源和目标都是这样提示。
+
+Fixed in v1.51. Files touched: =manifest.json=, =src/content/netflix/subtitle-api.js=,
+=src/content/netflix/subtitles.js=.
+
+Root causes:
+1. The subtitle bridge was only checking =video.textTracks= for available tracks,
+   but Netflix's initial track list in textTracks is often empty until a language
+   is selected; and even then, =player.getTextTracks()= from Netflix's own API is
+   more reliable for listing ALL available languages.
+2. The cuechange listener setup was missing from the rewritten bridge so even
+   when a track became active we weren't collecting its cues.
+3. Debug logging ("subtitle container HTML" on every poll) was flooding the console.
+4. =chrome.storage.local= was hitting quota errors.
+
+Fixes:
+- =subtitle-api.js=: rewrote the bridge to query Netflix's player API
+  (=netflix.appContext.state.playerApp.getAPI().videoPlayer.getTextTracks()=)
+  in addition to =video.textTracks= for language discovery. Added proper cuechange
+  listeners for real-time capture when tracks become active. Added TTML/DFXP XML
+  parser and XHR interception. Periodic polling merges tracks from both sources.
+- =manifest.json=: added ="unlimitedStorage"= permission.
+- =src/content/netflix/subtitles.js=: removed the noisy debug LOG.
+
+Note: Netflix typically only loads cues into =textTracks= for the language that
+is currently enabled in the player UI. To capture both source and target
+languages, select language A in Netflix's menu, wait for cues to populate,
+then select language B.
+
+
+#+begin_src text
+  utils.js:8 [NST] subtitle container HTML:
+  utils.js:8 [NST] subtitle container HTML:
+  utils.js:8 [NST] subtitle container HTML:
+  utils.js:8 [NST] subtitle container HTML:
+  utils.js:8 [NST] subtitle container HTML:
+  VM3765:207 [NST-API-Explorer] XHR intercepted: GET https://ipv6-c106-sin001-ix.1.oca.nflxvideo.net/?o=1&v=25&e=1782075344&t=6S8r3u4Hq_WtnO7I2gR9Pp_Iw53go9L-I0L13PyKHrIphkrZ49kSb93Kx2cZyOgFdm_SWQ5CwX9lSrTVeP9h5ggVlsJUkxcCk0srGVTrZTFx3SXsUPgFAE1mSjgFdzGLGMsdlLR8KZ-1CP2hLFhBPtgvMQmCWMQctk2cD9PfwTlNIxkVE8PzqzN7YD3p8nCxa_sJ3bzUYMs4Q-V2nWUoK6G1uijuuvjlZrsPKiL4KrWCMlbaBCE4XQChXAJijDHizFei71v6uNNaqkMbDr9fdW3CofsOJGI5kg
+  utils.js:8 [NST] Netflix XHR detected: GET https://ipv6-c106-sin001-ix.1.oca.nflxvideo.net/?o=1&v=25&e=1782075344&t=6S8r3u4Hq_WtnO7I2gR9Pp_Iw53go9L-I0L13PyKHrIphkrZ49kSb93Kx2cZyOgFdm_SWQ5CwX9lSrTVeP9h5ggVlsJUkxcCk0srGVTrZTFx3SXsUPgFAE1mSjgFdzGLGMsdlLR8KZ-1CP2hLFhBPtgvMQmCWMQctk2cD9PfwTlNIxkVE8PzqzN7YD3p8nCxa_sJ3bzUYMs4Q-V2nWUoK6G1uijuuvjlZrsPKiL4KrWCMlbaBCE4XQChXAJijDHizFei71v6uNNaqkMbDr9fdW3CofsOJGI5kg
+  utils.js:8 [NST] subtitle container HTML:
+  utils.js:8 [NST] subtitle container HTML:
+  utils.js:8 [NST] Netflix XHR response: https://ipv6-c106-sin001-ix.1.oca.nflxvideo.net/?o=1&v=25&e=1782075344&t=6S8r3u4Hq_WtnO7I2gR9Pp_Iw53go9L-I0L13PyKHrIphkrZ49kSb93Kx2cZyOgFdm_SWQ5CwX9lSrTVeP9h5ggVlsJUkxcCk0srGVTrZTFx3SXsUPgFAE1mSjgFdzGLGMsdlLR8KZ-1CP2hLFhBPtgvMQmCWMQctk2cD9PfwTlNIxkVE8PzqzN7YD3p8nCxa_sJ3bzUYMs4Q-V2nWUoK6G1uijuuvjlZrsPKiL4KrWCMlbaBCE4XQChXAJijDHizFei71v6uNNaqkMbDr9fdW3CofsOJGI5kg 200 text/xml
+  utils.js:8 [NST] subtitle container HTML: <div class="player-timedtext-text-container" style="display: block; white-space: nowrap; text-align: center; position: absolute; left: 33.7896%; bottom: 12.1639%;"><span style="display:inline-block;text-align:center"><span style="font-size:34px;line-height:normal;font-weight:normal;color:#ffffff;text-shadow:#000000 0px 0px 7px;font-family:Netflix Sans,Helvetica Nueue,Helvetica,Arial,sans-serif;font-weight:bolder">想装断片蒙混过去 门儿都没有</span></span></div>
+  utils.js:8 [NST] subtitle: 想装断片蒙混过去 门儿都没有
+  utils.js:8 [NST] getVideoTime -> 931.259811 videoEl= true
+  utils.js:8 [NST] fetch start: https://translate.googleapis.com/translate_a/single?client=gtx&dt=t&dj=1&source=icon&sl=auto&tl=zh-CN&q=%E6%83%B3%E8%A3%85%E6%96%AD%E7%89%87%E8%92%99%E6%B7%B7%E8%BF%87%E5%8E%BB%20%E9%97%A8%E5%84%BF%E9%83%BD%E6%B2%A1%E6%9C%89
+  utils.js:8 [NST] fetch ok: https://translate.googleapis.com/translate_a/single?client=gtx&dt=t&dj=1&source=icon&sl=auto&tl=zh-CN&q=%E6%83%B3%E8%A3%85%E6%96%AD%E7%89%87%E8%92%99%E6%B7%B7%E8%BF%87%E5%8E%BB%20%E9%97%A8%E5%84%BF%E9%83%BD%E6%B2%A1%E6%9C%89
+  utils.js:8 [NST] auto-translate: 想装断片蒙混过去 门儿都没有
+  utils.js:8 [NST] subtitle container HTML: <div class="player-timedtext-text-container" style="display: block; white-space: nowrap; text-align: center; position: absolute; left: 33.7896%; bottom: 12.1639%;"><span style="display:inline-block;text-align:center"><span style="font-size:34px;line-height:normal;font-weight:normal;color:#ffffff;text-shadow:#000000 0px 0px 7px;font-family:Netflix Sans,Helvetica Nueue,Helvetica,Arial,sans-serif;font-weight:bolder">想装断片蒙混过去 门儿都没有</span></span></div>
+  utils.js:8 [NST] poll: .player-timedtext= true  launched= true
+  utils.js:8 [NST] subtitle container HTML: <div class="player-timedtext-text-container" style="display: block; white-space: nowrap; text-align: center; position: absolute; left: 33.7896%; bottom: 12.1639%;"><span style="display:inline-block;text-align:center"><span style="font-size:34px;line-height:normal;font-weight:normal;color:#ffffff;text-shadow:#000000 0px 0px 7px;font-family:Netflix Sans,Helvetica Nueue,Helvetica,Arial,sans-serif;font-weight:bolder">想装断片蒙混过去 门儿都没有</span></span></div>
+  utils.js:8 [NST] subtitle container HTML: <div class="player-timedtext-text-container" style="display: block; white-space: nowrap; text-align: center; position: absolute; left: 33.7896%; bottom: 12.1639%;"><span style="display:inline-block;text-align:center"><span style="font-size:34px;line-height:normal;font-weight:normal;color:#ffffff;text-shadow:#000000 0px 0px 7px;font-family:Netflix Sans,Helvetica Nueue,Helvetica,Arial,sans-serif;font-weight:bolder">想装断片蒙混过去 门儿都没有</span></span></div>
+  utils.js:8 [NST] subtitle container HTML: <div class="player-timedtext-text-container" style="display: block; white-space: nowrap; text-align: center; position: absolute; left: 33.7896%; bottom: 12.1639%;"><span style="display:inline-block;text-align:center"><span style="font-size:34px;line-height:normal;font-weight:normal;color:#ffffff;text-shadow:#000000 0px 0px 7px;font-family:Netflix Sans,Helvetica Nueue,Helvetica,Arial,sans-serif;font-weight:bolder">想装断片蒙混过去 门儿都没有</span></span></div>
+  utils.js:8 [NST] subtitle container HTML: <div class="player-timedtext-text-container" style="display: block; white-space: nowrap; text-align: center; position: absolute; left: 33.7896%; bottom: 12.1639%;"><span style="display:inline-block;text-align:center"><span style="font-size:34px;line-height:normal;font-weight:normal;color:#ffffff;text-shadow:#000000 0px 0px 7px;font-family:Netflix Sans,Helvetica Nueue,Helvetica,Arial,sans-serif;font-weight:bolder">想装断片蒙混过去 门儿都没有</span></span></div>
+  utils.js:9 [NST] nstDB save error: Resource::kQuotaBytes quota exceeded
+  WARN @ utils.js:9
+  (anonymous) @ db.js:131
+  utils.js:8 [NST] subtitle container HTML: <div class="player-timedtext-text-container" style="display: block; white-space: nowrap; text-align: center; position: absolute; left: 33.7896%; bottom: 12.1639%;"><span style="display:inline-block;text-align:center"><span style="font-size:34px;line-height:normal;font-weight:normal;color:#ffffff;text-shadow:#000000 0px 0px 7px;font-family:Netflix Sans,Helvetica Nueue,Helvetica,Arial,sans-serif;font-weight:bolder">想装断片蒙混过去 门儿都没有</span></span></div>
+  utils.js:8 [NST] subtitle container HTML: <div class="player-timedtext-text-container" style="display: block; white-space: nowrap; text-align: center; position: absolute; left: 33.7896%; bottom: 12.1639%;"><span style="display:inline-block;text-align:center"><span style="font-size:34px;line-height:normal;font-weight:normal;color:#ffffff;text-shadow:#000000 0px 0px 7px;font-family:Netflix Sans,Helvetica Nueue,Helvetica,Arial,sans-serif;font-weight:bolder">想装断片蒙混过去 门儿都没有</span></span></div>
+  utils.js:8 [NST] subtitle container HTML: <div class="player-timedtext-text-container" style="display: block; white-space: nowrap; text-align: center; position: absolute; left: 33.7896%; bottom: 12.1639%;"><span style="display:inline-block;text-align:center"><span style="font-size:34px;line-height:normal;font-weight:normal;color:#ffffff;text-shadow:#000000 0px 0px 7px;font-family:Netflix Sans,Helvetica Nueue,Helvetica,Arial,sans-serif;font-weight:bolder">想装断片蒙混过去 门儿都没有</span></span></div>
+  utils.js:8 [NST] subtitle container HTML: <div class="player-timedtext-text-container" style="display: block; white-space: nowrap; text-align: center; position: absolute; left: 33.7896%; bottom: 12.1639%;"><span style="display:inline-block;text-align:center"><span style="font-size:34px;line-height:normal;font-weight:normal;color:#ffffff;text-shadow:#000000 0px 0px 7px;font-family:Netflix Sans,Helvetica Nueue,Helvetica,Arial,sans-serif;font-weight:bolder">想装断片蒙混过去 门儿都没有</span></span></div>
+  VM3765:207 [NST-API-Explorer] XHR intercepted: GET https://ipv6-c106-sin001-ix.1.oca.nflxvideo.net/?o=1&v=25&e=1782075344&t=-nb8VNJPgCQMm0jlh221hVFx1-2BGZo1uh7Sx4m0rw6mmbmSGXJJ2j4j_7dSIShT_dHvUtrOi-d6MvjttwLkoXbPyMX2R42GnvIywBQnpdLF3qeZabghuKSU6gFZ_6pcFaSdQJXo1vie9JfKatyPtLMdirYJkxaPWeLg-swXtUHvdHFgc3OSsvbYadDOZ-KP_vNB5niRJlOWfaCbr0xkU_sLr4SAZf17vIjrQbue0J38MJUy96BLvmdW62c_FzpuHOJcz3bH3pYBZs2MbKO4QklJV0EFED0McA
+  utils.js:8 [NST] Netflix XHR detected: GET https://ipv6-c106-sin001-ix.1.oca.nflxvideo.net/?o=1&v=25&e=1782075344&t=-nb8VNJPgCQMm0jlh221hVFx1-2BGZo1uh7Sx4m0rw6mmbmSGXJJ2j4j_7dSIShT_dHvUtrOi-d6MvjttwLkoXbPyMX2R42GnvIywBQnpdLF3qeZabghuKSU6gFZ_6pcFaSdQJXo1vie9JfKatyPtLMdirYJkxaPWeLg-swXtUHvdHFgc3OSsvbYadDOZ-KP_vNB5niRJlOWfaCbr0xkU_sLr4SAZf17vIjrQbue0J38MJUy96BLvmdW62c_FzpuHOJcz3bH3pYBZs2MbKO4QklJV0EFED0McA
+  utils.js:8 [NST] subtitle container HTML:
+  utils.js:8 [NST] Netflix XHR response: https://ipv6-c106-sin001-ix.1.oca.nflxvideo.net/?o=1&v=25&e=1782075344&t=-nb8VNJPgCQMm0jlh221hVFx1-2BGZo1uh7Sx4m0rw6mmbmSGXJJ2j4j_7dSIShT_dHvUtrOi-d6MvjttwLkoXbPyMX2R42GnvIywBQnpdLF3qeZabghuKSU6gFZ_6pcFaSdQJXo1vie9JfKatyPtLMdirYJkxaPWeLg-swXtUHvdHFgc3OSsvbYadDOZ-KP_vNB5niRJlOWfaCbr0xkU_sLr4SAZf17vIjrQbue0J38MJUy96BLvmdW62c_FzpuHOJcz3bH3pYBZs2MbKO4QklJV0EFED0McA 200 text/xml
+  utils.js:8 [NST] subtitle container HTML:
+  utils.js:8 [NST] subtitle container HTML: <div class="player-timedtext-text-container" style="display: block; white-space: nowrap; text-align: center; direction: ltr; position: absolute; left: 37.9323%; bottom: 12.1639%;"><span style="display:inline-block;text-align:start"><span lang="ja" style="font-size:34px;line-height:normal;font-weight:normal;color:#ffffff;text-shadow:#000000 0px 0px 7px;font-family:Netflix Sans,Helvetica Nueue,Helvetica,Arial,sans-serif;font-weight:bolder">記憶がないからって</span><span lang="ja" style="font-size:34px;line
+  utils.js:8 [NST] extractSubtitle: found lines via <br>: (2) ['記憶がないからって', '逃げようなんて思うな']
+  utils.js:8 [NST] extractSubtitle: found 2 lines: (2) ['記憶がないからって', '逃げようなんて思うな']
+  utils.js:8 [NST] subtitle: 記憶がないからって
+  逃げようなんて思うな
+  utils.js:8 [NST] getVideoTime -> 931.259811 videoEl= true
+  utils.js:8 [NST] auto-translate: handling 2 lines separately
+  utils.js:8 [NST] fetch start: https://translate.googleapis.com/translate_a/single?client=gtx&dt=t&dj=1&source=icon&sl=auto&tl=zh-CN&q=%E8%A8%98%E6%86%B6%E3%81%8C%E3%81%AA%E3%81%84%E3%81%8B%E3%82%89%E3%81%A3%E3%81%A6
+  utils.js:8 [NST] fetch start: https://translate.googleapis.com/translate_a/single?client=gtx&dt=t&dj=1&source=icon&sl=auto&tl=zh-CN&q=%E9%80%83%E3%81%92%E3%82%88%E3%81%86%E3%81%AA%E3%82%93%E3%81%A6%E6%80%9D%E3%81%86%E3%81%AA
+  utils.js:8 [NST] subtitle container HTML: <div class="player-timedtext-text-container" style="display: block; white-space: nowrap; text-align: center; direction: ltr; position: absolute; left: 37.9323%; bottom: 12.1639%;"><span style="display:inline-block;text-align:start"><span lang="ja" style="font-size:34px;line-height:normal;font-weight:normal;color:#ffffff;text-shadow:#000000 0px 0px 7px;font-family:Netflix Sans,Helvetica Nueue,Helvetica,Arial,sans-serif;font-weight:bolder">記憶がないからって</span><span lang="ja" style="font-size:34px;line
+  utils.js:8 [NST] extractSubtitle: found lines via <br>: (2) ['記憶がないからって', '逃げようなんて思うな']
+  utils.js:8 [NST] extractSubtitle: found 2 lines: (2) ['記憶がないからって', '逃げようなんて思うな']
+  utils.js:8 [NST] fetch ok: https://translate.googleapis.com/translate_a/single?client=gtx&dt=t&dj=1&source=icon&sl=auto&tl=zh-CN&q=%E8%A8%98%E6%86%B6%E3%81%8C%E3%81%AA%E3%81%84%E3%81%8B%E3%82%89%E3%81%A3%E3%81%A6
+  utils.js:8 [NST] poll: .player-timedtext= true  launched= true
+  utils.js:8 [NST] subtitle container HTML: <div class="player-timedtext-text-container" style="display: block; white-space: nowrap; text-align: center; direction: ltr; position: absolute; left: 37.9323%; bottom: 12.1639%;"><span style="display:inline-block;text-align:start"><span lang="ja" style="font-size:34px;line-height:normal;font-weight:normal;color:#ffffff;text-shadow:#000000 0px 0px 7px;font-family:Netflix Sans,Helvetica Nueue,Helvetica,Arial,sans-serif;font-weight:bolder">記憶がないからって</span><span lang="ja" style="font-size:34px;line
+  utils.js:8 [NST] extractSubtitle: found lines via <br>: (2) ['記憶がないからって', '逃げようなんて思うな']
+  utils.js:8 [NST] extractSubtitle: found 2 lines: (2) ['記憶がないからって', '逃げようなんて思うな']
+  utils.js:8 [NST] subtitle container HTML: <div class="player-timedtext-text-container" style="display: block; white-space: nowrap; text-align: center; direction: ltr; position: absolute; left: 37.9323%; bottom: 12.1639%;"><span style="display:inline-block;text-align:start"><span lang="ja" style="font-size:34px;line-height:normal;font-weight:normal;color:#ffffff;text-shadow:#000000 0px 0px 7px;font-family:Netflix Sans,Helvetica Nueue,Helvetica,Arial,sans-serif;font-weight:bolder">記憶がないからって</span><span lang="ja" style="font-size:34px;line
+  utils.js:8 [NST] extractSubtitle: found lines via <br>: (2) ['記憶がないからって', '逃げようなんて思うな']
+  utils.js:8 [NST] extractSubtitle: found 2 lines: (2) ['記憶がないからって', '逃げようなんて思うな']
+  utils.js:8 [NST] fetch ok: https://translate.googleapis.com/translate_a/single?client=gtx&dt=t&dj=1&source=icon&sl=auto&tl=zh-CN&q=%E9%80%83%E3%81%92%E3%82%88%E3%81%86%E3%81%AA%E3%82%93%E3%81%A6%E6%80%9D%E3%81%86%E3%81%AA
+  utils.js:8 [NST] auto-translate (multi-line): 因为我不记得了
+  不要想着逃跑
+  utils.js:8 [NST] subtitle container HTML: <div class="player-timedtext-text-container" style="display: block; white-space: nowrap; text-align: center; direction: ltr; position: absolute; left: 37.9323%; bottom: 12.1639%;"><span style="display:inline-block;text-align:start"><span lang="ja" style="font-size:34px;line-height:normal;font-weight:normal;color:#ffffff;text-shadow:#000000 0px 0px 7px;font-family:Netflix Sans,Helvetica Nueue,Helvetica,Arial,sans-serif;font-weight:bolder">記憶がないからって</span><span lang="ja" style="font-size:34px;line
+  utils.js:8 [NST] extractSubtitle: found lines via <br>: (2) ['記憶がないからって', '逃げようなんて思うな']
+  utils.js:8 [NST] extractSubtitle: found 2 lines: (2) ['記憶がないからって', '逃げようなんて思うな']
+  main.js:504 [NST] message: {getAvailableLanguages: true}
+  utils.js:8 [NST] subtitle container HTML: <div class="player-timedtext-text-container" style="display: block; white-space: nowrap; text-align: center; direction: ltr; position: absolute; left: 37.9323%; bottom: 12.1639%;"><span style="display:inline-block;text-align:start"><span lang="ja" style="font-size:34px;line-height:normal;font-weight:normal;color:#ffffff;text-shadow:#000000 0px 0px 7px;font-family:Netflix Sans,Helvetica Nueue,Helvetica,Arial,sans-serif;font-weight:bolder">記憶がないからって</span><span lang="ja" style="font-size:34px;line
+  utils.js:8 [NST] extractSubtitle: found lines via <br>: (2) ['記憶がないからって', '逃げようなんて思うな']
+  utils.js:8 [NST] extractSubtitle: found 2 lines: (2) ['記憶がないからって', '逃げようなんて思うな']
+  utils.js:8 [NST] subtitle container HTML: <div class="player-timedtext-text-container" style="display: block; white-space: nowrap; text-align: center; direction: ltr; position: absolute; left: 37.9323%; bottom: 10%;"><span style="display:inline-block;text-align:start"><span lang="ja" style="font-size:34px;line-height:normal;font-weight:normal;color:#ffffff;text-shadow:#000000 0px 0px 7px;font-family:Netflix Sans,Helvetica Nueue,Helvetica,Arial,sans-serif;font-weight:bolder">記憶がないからって</span><span lang="ja" style="font-size:34px;line-heig
+  utils.js:8 [NST] extractSubtitle: found lines via <br>: (2) ['記憶がないからって', '逃げようなんて思うな']
+  utils.js:8 [NST] extractSubtitle: found 2 lines: (2) ['記憶がないからって', '逃げようなんて思うな']
+  utils.js:8 [NST] subtitle container HTML: <div class="player-timedtext-text-container" style="display: block; white-space: nowrap; text-align: center; direction: ltr; position: absolute; left: 37.9323%; bottom: 10%;"><span style="display:inline-block;text-align:start"><span lang="ja" style="font-size:34px;line-height:normal;font-weight:normal;color:#ffffff;text-shadow:#000000 0px 0px 7px;font-family:Netflix Sans,Helvetica Nueue,Helvetica,Arial,sans-serif;font-weight:bolder">記憶がないからって</span><span lang="ja" style="font-size:34px;line-heig
+  utils.js:8 [NST] extractSubtitle: found lines via <br>: (2) ['記憶がないからって', '逃げようなんて思うな']
+  utils.js:8 [NST] extractSubtitle: found 2 lines: (2) ['記憶がないからって', '逃げようなんて思うな']
+  utils.js:8 [NST] subtitle container HTML: <div class="player-timedtext-text-container" style="display: block; white-space: nowrap; text-align: center; direction: ltr; position: absolute; left: 37.9323%; bottom: 10%;"><span style="display:inline-block;text-align:start"><span lang="ja" style="font-size:34px;line-height:normal;font-weight:normal;color:#ffffff;text-shadow:#000000 0px 0px 7px;font-family:Netflix Sans,Helvetica Nueue,Helvetica,Arial,sans-serif;font-weight:bolder">記憶がないからって</span><span lang="ja" style="font-size:34px;line-heig
+  utils.js:8 [NST] extractSubtitle: found lines via <br>: (2) ['記憶がないからって', '逃げようなんて思うな']
+  utils.js:8 [NST] extractSubtitle: found 2 lines: (2) ['記憶がないからって', '逃げようなんて思うな']
+  utils.js:8 [NST] subtitle container HTML: <div class="player-timedtext-text-container" style="display: block; white-space: nowrap; text-align: center; direction: ltr; position: absolute; left: 37.9323%; bottom: 10%;"><span style="display:inline-block;text-align:start"><span lang="ja" style="font-size:34px;line-height:normal;font-weight:normal;color:#ffffff;text-shadow:#000000 0px 0px 7px;font-family:Netflix Sans,Helvetica Nueue,Helvetica,Arial,sans-serif;font-weight:bolder">記憶がないからって</span><span lang="ja" style="font-size:34px;line-heig
+  utils.js:8 [NST] extractSubtitle: found lines via <br>: (2) ['記憶がないからって', '逃げようなんて思うな']
+  utils.js:8 [NST] extractSubtitle: found 2 lines: (2) ['記憶がないからって', '逃げようなんて思うな']
+  main.js:504 [NST] message: {getAvailableLanguages: true}
+  utils.js:9 [NST] nstDB save error: Resource::kQuotaBytes quota exceeded
+  WARN @ utils.js:9
+  (anonymous) @ db.js:131
+  utils.js:8 [NST] subtitle container HTML: <div class="player-timedtext-text-container" style="display: block; white-space: nowrap; text-align: center; direction: ltr; position: absolute; left: 37.9323%; bottom: 10%;"><span style="display:inline-block;text-align:start"><span lang="ja" style="font-size:34px;line-height:normal;font-weight:normal;color:#ffffff;text-shadow:#000000 0px 0px 7px;font-family:Netflix Sans,Helvetica Nueue,Helvetica,Arial,sans-serif;font-weight:bolder">記憶がないからって</span><span lang="ja" style="font-size:34px;line-heig
+  utils.js:8 [NST] extractSubtitle: found lines via <br>: (2) ['記憶がないからって', '逃げようなんて思うな']
+  utils.js:8 [NST] extractSubtitle: found 2 lines: (2) ['記憶がないからって', '逃げようなんて思うな']
+  utils.js:8 [NST] subtitle container HTML: <div class="player-timedtext-text-container" style="display: block; white-space: nowrap; text-align: center; direction: ltr; position: absolute; left: 37.9323%; bottom: 10%;"><span style="display:inline-block;text-align:start"><span lang="ja" style="font-size:34px;line-height:normal;font-weight:normal;color:#ffffff;text-shadow:#000000 0px 0px 7px;font-family:Netflix Sans,Helvetica Nueue,Helvetica,Arial,sans-serif;font-weight:bolder">記憶がないからって</span><span lang="ja" style="font-size:34px;line-heig
+  utils.js:8 [NST] extractSubtitle: found lines via <br>: (2) ['記憶がないからって', '逃げようなんて思うな']
+  utils.js:8 [NST] extractSubtitle: found 2 lines: (2) ['記憶がないからって', '逃げようなんて思うな']
+  utils.js:8 [NST] subtitle container HTML: <div class="player-timedtext-text-container" style="display: block; white-space: nowrap; text-align: center; direction: ltr; position: absolute; left: 37.9323%; bottom: 10%;"><span style="display:inline-block;text-align:start"><span lang="ja" style="font-size:34px;line-height:normal;font-weight:normal;color:#ffffff;text-shadow:#000000 0px 0px 7px;font-family:Netflix Sans,Helvetica Nueue,Helvetica,Arial,sans-serif;font-weight:bolder">記憶がないからって</span><span lang="ja" style="font-size:34px;line-heig
+  utils.js:8 [NST] extractSubtitle: found lines via <br>: (2) ['記憶がないからって', '逃げようなんて思うな']
+  utils.js:8 [NST] extractSubtitle: found 2 lines: (2) ['記憶がないからって', '逃げようなんて思うな']
+  utils.js:8 [NST] poll: .player-timedtext= true  launched= true
+  utils.js:8 [NST] subtitle container HTML: <div class="player-timedtext-text-container" style="display: block; white-space: nowrap; text-align: center; direction: ltr; position: absolute; left: 37.9323%; bottom: 10%;"><span style="display:inline-block;text-align:start"><span lang="ja" style="font-size:34px;line-height:normal;font-weight:normal;color:#ffffff;text-shadow:#000000 0px 0px 7px;font-family:Netflix Sans,Helvetica Nueue,Helvetica,Arial,sans-serif;font-weight:bolder">記憶がないからって</span><span lang="ja" style="font-size:34px;line-heig
+  utils.js:8 [NST] extractSubtitle: found lines via <br>: (2) ['記憶がないからって', '逃げようなんて思うな']
+  utils.js:8 [NST] extractSubtitle: found 2 lines: (2) ['記憶がないからって', '逃げようなんて思うな']
+  main.js:504 [NST] message: {getAvailableLanguages: true}
+  utils.js:8 [NST] subtitle container HTML: <div class="player-timedtext-text-container" style="display: block; white-space: nowrap; text-align: center; direction: ltr; position: absolute; left: 37.9323%; bottom: 10%;"><span style="display:inline-block;text-align:start"><span lang="ja" style="font-size:34px;line-height:normal;font-weight:normal;color:#ffffff;text-shadow:#000000 0px 0px 7px;font-family:Netflix Sans,Helvetica Nueue,Helvetica,Arial,sans-serif;font-weight:bolder">記憶がないからって</span><span lang="ja" style="font-size:34px;line-heig
+  utils.js:8 [NST] extractSubtitle: found lines via <br>: (2) ['記憶がないからって', '逃げようなんて思うな']
+  utils.js:8 [NST] extractSubtitle: found 2 lines: (2) ['記憶がないからって', '逃げようなんて思うな']
+  utils.js:8 [NST] subtitle container HTML: <div class="player-timedtext-text-container" style="display: block; white-space: nowrap; text-align: center; direction: ltr; position: absolute; left: 37.9323%; bottom: 10%;"><span style="display:inline-block;text-align:start"><span lang="ja" style="font-size:34px;line-height:normal;font-weight:normal;color:#ffffff;text-shadow:#000000 0px 0px 7px;font-family:Netflix Sans,Helvetica Nueue,Helvetica,Arial,sans-serif;font-weight:bolder">記憶がないからって</span><span lang="ja" style="font-size:34px;line-heig
+  utils.js:8 [NST] extractSubtitle: found lines via <br>: (2) ['記憶がないからって', '逃げようなんて思うな']
+  utils.js:8 [NST] extractSubtitle: found 2 lines: (2) ['記憶がないからって', '逃げようなんて思うな']
+  utils.js:8 [NST] subtitle container HTML: <div class="player-timedtext-text-container" style="display: block; white-space: nowrap; text-align: center; direction: ltr; position: absolute; left: 37.9323%; bottom: 10%;"><span style="display:inline-block;text-align:start"><span lang="ja" style="font-size:34px;line-height:normal;font-weight:normal;color:#ffffff;text-shadow:#000000 0px 0px 7px;font-family:Netflix Sans,Helvetica Nueue,Helvetica,Arial,sans-serif;font-weight:bolder">記憶がないからって</span><span lang="ja" style="font-size:34px;line-heig
+  utils.js:8 [NST] extractSubtitle: found lines via <br>: (2) ['記憶がないからって', '逃げようなんて思うな']
+  utils.js:8 [NST] extractSubtitle: found 2 lines: (2) ['記憶がないからって', '逃げようなんて思うな']
+  utils.js:8 [NST] subtitle container HTML: <div class="player-timedtext-text-container" style="display: block; white-space: nowrap; text-align: center; direction: ltr; position: absolute; left: 37.9323%; bottom: 10%;"><span style="display:inline-block;text-align:start"><span lang="ja" style="font-size:34px;line-height:normal;font-weight:normal;color:#ffffff;text-shadow:#000000 0px 0px 7px;font-family:Netflix Sans,Helvetica Nueue,Helvetica,Arial,sans-serif;font-weight:bolder">記憶がないからって</span><span lang="ja" style="font-size:34px;line-heig
+  utils.js:8 [NST] extractSubtitle: found lines via <br>: (2) ['記憶がないからって', '逃げようなんて思うな']
+  utils.js:8 [NST] extractSubtitle: found 2 lines: (2) ['記憶がないからって', '逃げようなんて思うな']
+  main.js:504 [NST] message: {getAvailableLanguages: true}
+#+end_src
