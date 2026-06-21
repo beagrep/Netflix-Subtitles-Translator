@@ -1071,3 +1071,17 @@ Fixed by moving the `chrome.runtime.onMessage` listener *inside* the IIFE in `sr
 - =src/content/main.js= - 整合字幕 API
 - =style.css= - 添加官方字幕样式
 - =manifest.json= - 添加新模块
+
+* DONE Not working, here's the console. Note, even the panel can't be opened.
+
+Fixed by repairing src/content/main.js which had duplicate function definitions and mangled code structure (mutation observer code was floating outside of the run() function). Restored the file by starting from the previous working commit and properly integrating the official subtitle API features.
+
+
+#+begin_src text
+  VM2699:207 [NST-API-Explorer] XHR intercepted: GET https://ipv6-c118-sin001-ix.1.oca.nflxvideo.net/?o=1&v=25&e=1782073108&t=H3G8_oeedg7pp5iEOHICC5s_p_cdWMzwdXsSO6wXTwo-MNgfV7PW8R5ITDczp18cn6fjS0EZJwQi-Gmvcq-L8lNQOI-EehbdtiSn-cLgo4EETargQaM2fS-n9DjrW5MYLJvnXAKrE_Wdwts7U1VXcWsxSi4LsO-PlxBN65qgw2ch4XjS1cGVdnfzW4VFgGqhzS77W8KGNz1ku4SsxRiT3d3HeD8ym-Ha-WNud4AIrf17w3N4EkikwWZgDAj0UmBjqALQZ9QQajHZ4K-szTnmohZu7MJCSWjf3w
+  utils.js:8 [NST] Netflix XHR detected: GET https://ipv6-c118-sin001-ix.1.oca.nflxvideo.net/?o=1&v=25&e=1782073108&t=H3G8_oeedg7pp5iEOHICC5s_p_cdWMzwdXsSO6wXTwo-MNgfV7PW8R5ITDczp18cn6fjS0EZJwQi-Gmvcq-L8lNQOI-EehbdtiSn-cLgo4EETargQaM2fS-n9DjrW5MYLJvnXAKrE_Wdwts7U1VXcWsxSi4LsO-PlxBN65qgw2ch4XjS1cGVdnfzW4VFgGqhzS77W8KGNz1ku4SsxRiT3d3HeD8ym-Ha-WNud4AIrf17w3N4EkikwWZgDAj0UmBjqALQZ9QQajHZ4K-szTnmohZu7MJCSWjf3w
+  utils.js:8 [NST] Netflix XHR response: https://ipv6-c118-sin001-ix.1.oca.nflxvideo.net/?o=1&v=25&e=1782073108&t=H3G8_oeedg7pp5iEOHICC5s_p_cdWMzwdXsSO6wXTwo-MNgfV7PW8R5ITDczp18cn6fjS0EZJwQi-Gmvcq-L8lNQOI-EehbdtiSn-cLgo4EETargQaM2fS-n9DjrW5MYLJvnXAKrE_Wdwts7U1VXcWsxSi4LsO-PlxBN65qgw2ch4XjS1cGVdnfzW4VFgGqhzS77W8KGNz1ku4SsxRiT3d3HeD8ym-Ha-WNud4AIrf17w3N4EkikwWZgDAj0UmBjqALQZ9QQajHZ4K-szTnmohZu7MJCSWjf3w 200 text/xml
+  VM2699:207 [NST-API-Explorer] XHR intercepted: GET https://ipv6-c106-sin001-ix.1.oca.nflxvideo.net/?o=1&v=25&e=1782073371&t=pBXTEuiEOf670dRC5Q32oolfcDObz9hcoDDNJ11hX166hZZ0kP13Xnz7PfmMoj2lTfx7QAwf0_qcwgmurv_lXoroOumB_79ZtEm3AEkhDc4HZEm1UtVDSIj6ix0Qw70yFTJrx2wCoArTjyu1rkrMWV7r9S2FLw6tNirvBqeS5LeLV0DNteSucPQ6xQ5nuOyaNN6T75GN86LDaYf3oBvpjoVZjxg92MvfswvQ9jdoI7ayLmcu-lS-8DPv8Feafl9oDmTaw-vPgLYohlE-Bx_L0qEz5hcW8atM6A
+  utils.js:8 [NST] Netflix XHR detected: GET https://ipv6-c106-sin001-ix.1.oca.nflxvideo.net/?o=1&v=25&e=1782073371&t=pBXTEuiEOf670dRC5Q32oolfcDObz9hcoDDNJ11hX166hZZ0kP13Xnz7PfmMoj2lTfx7QAwf0_qcwgmurv_lXoroOumB_79ZtEm3AEkhDc4HZEm1UtVDSIj6ix0Qw70yFTJrx2wCoArTjyu1rkrMWV7r9S2FLw6tNirvBqeS5LeLV0DNteSucPQ6xQ5nuOyaNN6T75GN86LDaYf3oBvpjoVZjxg92MvfswvQ9jdoI7ayLmcu-lS-8DPv8Feafl9oDmTaw-vPgLYohlE-Bx_L0qEz5hcW8atM6A
+  utils.js:8 [NST] Netflix XHR response: https://ipv6-c106-sin001-ix.1.oca.nflxvideo.net/?o=1&v=25&e=1782073371&t=pBXTEuiEOf670dRC5Q32oolfcDObz9hcoDDNJ11hX166hZZ0kP13Xnz7PfmMoj2lTfx7QAwf0_qcwgmurv_lXoroOumB_79ZtEm3AEkhDc4HZEm1UtVDSIj6ix0Qw70yFTJrx2wCoArTjyu1rkrMWV7r9S2FLw6tNirvBqeS5LeLV0DNteSucPQ6xQ5nuOyaNN6T75GN86LDaYf3oBvpjoVZjxg92MvfswvQ9jdoI7ayLmcu-lS-8DPv8Feafl9oDmTaw-vPgLYohlE-Bx_L0qEz5hcW8atM6A 200 text/xml
+#+end_src
