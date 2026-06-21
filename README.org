@@ -1255,3 +1255,44 @@ then select language B.
   utils.js:8 [NST] extractSubtitle: found 2 lines: (2) ['記憶がないからって', '逃げようなんて思うな']
   main.js:504 [NST] message: {getAvailableLanguages: true}
 #+end_src
+
+* DONE 你是怎么获取官方字幕语言的？还是不行，你先解释给我听一下你的做法。
+
+做法：在 =src/content/netflix/subtitle-api.js= 的 =injectSubtitleBridge()= 中向页面
+主世界注入一段桥接脚本，该脚本运行在 page world 里（非 content script 的 isolated
+world），通过两条路拿到字幕语言列表：
+1. Netflix 内部播放器 API：=window.netflix.appContext.state.playerApp.getAPI()
+   .videoPlayer.getAllPlayerSessionIds()= → 当前 watch-session → =getTextTracks()=
+   返回 ={id, language, label, kind, isNone}=。
+2. 标准 HTML5 API：=document.querySelector('video').textTracks= 里所有
+   =subtitles/captions= track 的 =language/label/mode/cueCount=。
+
+桥接每 2 秒调用一次 =sendTrackInfo()=，两路结果去重合并后通过
+=window.postMessage({__nst:'text-tracks-found', tracks:[...]}, '*')= 发回 content
+script；同时在每个 textTrack 上挂 =cuechange= 监听，把正在显示的 cue 通过
+={__nst:'subtitle-cue'/'all-subtitle-cues', language, label, cues}= 发回。
+
+content script 侧（=subtitle-api.js=）维护模块级变量 =availableLanguages= 和
+=capturedSubtitles[language]=，通过 =NST.netflix.subtitleApi.getAvailableLanguages()=
+/getCapturedCounts() 对外暴露；popup 打开/每 2 秒轮询发 ={getAvailableLanguages:true}=
+给 main.js，main.js 返回 ={languages, captured}= 后填充 popup 的官方源/目标语言
+下拉。用户选完语言 popup 发 ={captureLanguage:lang}=，桥接 collectFromTextTracks()
+把对应 track 的所有 cue 一次性 post 回来，双语模式下 loadBilingualSubtitles() 按
+startTime<1s 容差配对 src/tgt cue 写入面板。
+
+=injectSubtitleBridge= 里还写了个 XHR 拦截器想抓 nflxvideo.net/?o= 的 TTML 响应，
+但目前是 no-op（只 log，没有解析/归属语言，注释里明说"we need to know which
+language this is for"），所以实际字幕数据完全依赖 =video.textTracks= 这条路。
+
+根据用户贴的 console 日志（反复出现 =main.js:504 [NST] message:
+{getAvailableLanguages:true}=，却没有任何 bridge / Subtitle API 初始化或
+text-tracks-found 的输出），可能失败点：
+1. CSP 拦截 inline script 注入，桥接根本没跑起来；
+2. Netflix 内部 API 路径 =appContext.state.playerApp= 已改版，=findPlayerAPI()=
+   抛错被 catch 吞掉；
+3. 刚进播放页未打开字幕菜单时，=video.textTracks= 里没有 subtitles/captions
+   track，或 track.cues 为空（=mode=disabled 时 Netflix 不加载 cue）；
+4. XHR 拦截那条路没接通，错过 TTML 响应。
+
+已在回复中给用户 3 段 console 诊断脚本（查 bridge 痕迹 / 查 player API / 查
+video.textTracks），等贴出输出后再定位到具体层并修。
