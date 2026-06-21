@@ -44,7 +44,10 @@
 			overlayPosition: 30,
 			overlaySize: 1.75,
 			overlayDuration: 5,
-			scrollThreshold: 85
+			scrollThreshold: 85,
+			useOfficialSubtitles: false,
+			officialSourceLang: '',
+			officialTargetLang: ''
 		},
 		SELECTORS: SELECTORS,
 		API_BASES: API_BASES
@@ -91,7 +94,10 @@
 			overlayPosition: 30,
 			overlaySize: 1.75,
 			overlayDuration: 5,
-			scrollThreshold: 85
+			scrollThreshold: 85,
+			useOfficialSubtitles: false,
+			officialSourceLang: '',
+			officialTargetLang: ''
 		}, function(items) {
 			config.user.lang = items.lang;
 			config.user.srcLang = items.srcLang;
@@ -103,6 +109,9 @@
 			config.user.overlaySize = items.overlaySize;
 			config.user.overlayDuration = items.overlayDuration;
 			config.user.scrollThreshold = items.scrollThreshold;
+			config.user.useOfficialSubtitles = items.useOfficialSubtitles;
+			config.user.officialSourceLang = items.officialSourceLang;
+			config.user.officialTargetLang = items.officialTargetLang;
 			LOG('options loaded:', config.user);
 			if (callback) callback(config.user);
 		});

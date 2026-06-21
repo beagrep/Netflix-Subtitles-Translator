@@ -1085,3 +1085,31 @@ Fixed by repairing src/content/main.js which had duplicate function definitions 
   utils.js:8 [NST] Netflix XHR detected: GET https://ipv6-c106-sin001-ix.1.oca.nflxvideo.net/?o=1&v=25&e=1782073371&t=pBXTEuiEOf670dRC5Q32oolfcDObz9hcoDDNJ11hX166hZZ0kP13Xnz7PfmMoj2lTfx7QAwf0_qcwgmurv_lXoroOumB_79ZtEm3AEkhDc4HZEm1UtVDSIj6ix0Qw70yFTJrx2wCoArTjyu1rkrMWV7r9S2FLw6tNirvBqeS5LeLV0DNteSucPQ6xQ5nuOyaNN6T75GN86LDaYf3oBvpjoVZjxg92MvfswvQ9jdoI7ayLmcu-lS-8DPv8Feafl9oDmTaw-vPgLYohlE-Bx_L0qEz5hcW8atM6A
   utils.js:8 [NST] Netflix XHR response: https://ipv6-c106-sin001-ix.1.oca.nflxvideo.net/?o=1&v=25&e=1782073371&t=pBXTEuiEOf670dRC5Q32oolfcDObz9hcoDDNJ11hX166hZZ0kP13Xnz7PfmMoj2lTfx7QAwf0_qcwgmurv_lXoroOumB_79ZtEm3AEkhDc4HZEm1UtVDSIj6ix0Qw70yFTJrx2wCoArTjyu1rkrMWV7r9S2FLw6tNirvBqeS5LeLV0DNteSucPQ6xQ5nuOyaNN6T75GN86LDaYf3oBvpjoVZjxg92MvfswvQ9jdoI7ayLmcu-lS-8DPv8Feafl9oDmTaw-vPgLYohlE-Bx_L0qEz5hcW8atM6A 200 text/xml
 #+end_src
+
+* DONE 我希望的那个从官方获取字幕数据的功能呢，还能实现吗？
+
+我希望在 Pop Up 里可以有一个开关和两个列表，分别代码：
+
+1. 使用官方双字幕（bool 型开关）
+2. 官方源字幕语言列表、官方目标字幕语言列表，这样，比如源选韩语、目标选中文的话，你在获取了两种字幕数据后（需要用户点击netflix菜单选择对应的字幕语言），在两种语言数据都已获取之后，在界面上有所提示，然后在 Panel 中就可以显示所有的字幕时间轴数据。
+
+Implemented in v1.50. Files touched: =manifest.json=, =src/content/config.js=,
+=src/content/netflix/subtitle-api.js=, =src/content/translator.js=,
+=src/content/main.js=, =popup.html=, =popup.js=.
+
+- Added "使用官方双字幕" toggle in popup to enable official bilingual subtitles
+- Added two dropdowns that dynamically populate with available Netflix subtitle languages
+- Status indicators show how many cues have been captured for each selected language
+- When both languages are selected and user enables them in Netflix's subtitle menu,
+  all timeline data is automatically loaded into the panel
+- Source language subtitles are used as originals, target language as translations
+- When official subtitles are enabled, Google Translate is bypassed completely
+- Real-time updates as Netflix loads more cues during playback
+- Official subtitles are marked with ✓ badge and green border in the panel
+
+Usage:
+1. Click "使用官方双字幕" checkbox in popup
+2. Select source language (e.g. Korean) and target language (e.g. Chinese)
+3. In Netflix player menu, select the source subtitle language first, wait a moment
+4. Then select the target subtitle language, wait a moment
+5. The panel will populate with all available bilingual subtitles automatically

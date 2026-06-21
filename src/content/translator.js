@@ -148,7 +148,10 @@
       return null;
     }
 
-    const targetLang = config.user.lang || 'en';
+    // Use official target language if configured, otherwise fall back to translation target
+    const targetLang = (config.user.useOfficialSubtitles && config.user.officialTargetLang)
+      ? config.user.officialTargetLang
+      : (config.user.lang || 'en');
     const cue = subtitleApi.getSubtitleAtTime(targetLang, capture.videoTime);
 
     if (cue && cue.text && cue.text.trim()) {

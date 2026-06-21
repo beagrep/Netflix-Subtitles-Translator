@@ -73,6 +73,13 @@
   function loadOfficialSubtitles() {
     if (!subtitleApi || !translator || !db || !videoId) return;
 
+    // If bilingual mode is enabled with both languages configured, load bilingual pairs
+    if (config.user.useOfficialSubtitles && config.user.officialSourceLang && config.user.officialTargetLang) {
+      loadBilingualSubtitles();
+      return;
+    }
+
+    // Single language mode (translation target)
     const targetLang = config.user.lang || 'en';
 
     const officialCaptures = subtitleApi.getSubtitles(targetLang);
@@ -97,8 +104,6 @@
           // Update DB
           db.recordSubtitle(videoId, cue.startTime, existing.original, cue.text, 'ok');
         }
-      } else {
-        // We don't have the original subtitle for this time - skip for now
       }
     });
   }
@@ -131,12 +136,108 @@
     const languages = subtitleApi.getAvailableLanguages();
     LOG('Available subtitle languages:', languages);
 
-    // Try to capture subtitles for current target language
-    const targetLang = config.user.lang || 'en';
+    // If using official subtitles with configured source/target, capture both
+    if (config.user.useOfficialSubtitles) {
+      if (config.user.officialSourceLang) {
+        LOG('Capturing official source language:', config.user.officialSourceLang);
+        subtitleApi.captureLanguage(config.user.officialSourceLang);
+      }
+      if (config.user.officialTargetLang) {
+        LOG('Capturing official target language:', config.user.officialTargetLang);
+        subtitleApi.captureLanguage(config.user.officialTargetLang);
+      }
+      setTimeout(loadBilingualSubtitles, 2000);
+    } else {
+      // Default behavior: just capture translation target
+      const targetLang = config.user.lang || 'en';
+      window.postMessage({ __nst: 'trigger-capture', language: targetLang }, '*');
+    }
+  }
 
-    // Call the injected helper - needs to run in page context
-    // We'll send a message to the injected bridge
-    window.postMessage({ __nst: 'trigger-capture', language: targetLang }, '*');
+  /**
+   * Load bilingual subtitles (source + target) into the panel
+   */
+  function loadBilingualSubtitles() {
+    if (!subtitleApi || !translator || !db || !videoId) return;
+    if (!config.user.useOfficialSubtitles) return;
+
+    const srcLang = config.user.officialSourceLang;
+    const tgtLang = config.user.officialTargetLang;
+
+    if (!srcLang || !tgtLang) {
+      LOG('Bilingual subtitles: source or target language not configured');
+      return;
+    }
+
+    const srcCues = subtitleApi.getSubtitles(srcLang);
+    const tgtCues = subtitleApi.getSubtitles(tgtLang);
+
+    LOG('Bilingual subtitles: source=' + srcCues.length + ' target=' + tgtCues.length);
+
+    if (srcCues.length === 0) {
+      LOG('No source subtitles captured yet - make sure to select', srcLang, 'in Netflix subtitle menu');
+      return;
+    }
+
+    let addedCount = 0;
+
+    // For each source cue, find matching target cue and add to panel
+    srcCues.forEach(function(srcCue) {
+      // Find matching target cue by time
+      const matchingTgt = tgtCues.find(function(tc) {
+        return Math.abs(srcCue.startTime - tc.startTime) < 1.0 ||
+               (srcCue.startTime <= tc.endTime && tc.startTime <= srcCue.endTime);
+      });
+
+      const translation = matchingTgt ? matchingTgt.text : '';
+
+      // Check if this subtitle already exists
+      const existing = findExistingCaptureByTime(srcCue.startTime);
+      if (existing) {
+        // Update existing if we have a better translation
+        if (translation && (!existing.translation || !existing.translation.trim() || existing.status !== 'ok')) {
+          existing.translation = translation;
+          existing.status = 'ok';
+          existing.isOfficial = true;
+          if (existing.dl) {
+            subtitlesUI.applyTranslation(existing.dl, translation);
+          }
+          db.recordSubtitle(videoId, srcCue.startTime, srcCue.text, translation, 'ok');
+        }
+        return;
+      }
+
+      // Create new entry
+      const entry = {
+        original: srcCue.text,
+        translation: translation,
+        ts: Date.now(),
+        videoTime: srcCue.startTime,
+        dl: null,
+        isOfficial: true,
+        status: translation ? 'ok' : 'pending'
+      };
+
+      translator.addCapture(entry);
+
+      // Add to UI
+      if (subtitlesUI) {
+        entry.dl = subtitlesUI.add(entry.original, entry.videoTime);
+        subtitlesUI.setCurrent(entry.dl);
+        if (translation) {
+          subtitlesUI.applyTranslation(entry.dl, translation);
+        }
+      }
+
+      // Save to DB
+      if (db) {
+        db.recordSubtitle(videoId, srcCue.startTime, srcCue.text, translation, entry.status);
+      }
+
+      addedCount++;
+    });
+
+    LOG('Added', addedCount, 'bilingual subtitles to panel');
   }
 
   /**
@@ -369,6 +470,14 @@
       }
     });
 
+    // Listen for official subtitle updates
+    window.addEventListener('nst-official-subtitles-updated', function(ev) {
+      if (config.user.useOfficialSubtitles) {
+        LOG('Official subtitles updated for', ev.detail.language, '- reloading bilingual pairs');
+        loadBilingualSubtitles();
+      }
+    });
+
     // Start polling
     pollForSubtitles();
   }
@@ -457,8 +566,33 @@
             if (centerTranslator && centerTranslator.applySettings) {
               centerTranslator.applySettings();
             }
+            // If official subtitles settings changed, re-trigger capture
+            if (config.user.useOfficialSubtitles) {
+              triggerOfficialSubtitleCapture();
+            }
           });
         }
+      }
+
+      if (request.getAvailableLanguages) {
+        // Return available and captured languages
+        const languages = subtitleApi ? subtitleApi.getAvailableLanguages() : [];
+        const captured = subtitleApi ? subtitleApi.getCapturedCounts() : {};
+        sendResponse({ languages: languages, captured: captured });
+        return true;
+      }
+
+      if (request.captureLanguage) {
+        // Trigger capture for a specific language
+        if (subtitleApi) {
+          subtitleApi.captureLanguage(request.captureLanguage);
+          // After a delay, check if we should load bilingual subtitles
+          if (config.user.useOfficialSubtitles) {
+            setTimeout(loadBilingualSubtitles, 2000);
+          }
+        }
+        sendResponse({ ok: true });
+        return true;
       }
     }
   );

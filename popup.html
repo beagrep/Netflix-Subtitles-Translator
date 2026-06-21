@@ -80,6 +80,32 @@ main { padding: 12px; }
 			<input type="range" id="scrollThreshold" name="scrollThreshold" min="60" max="95" value="85" style="width: 100%;">
 		</div>
 
+		<hr style="border: 0; border-top: 1px solid #eee; margin: 12px 0;">
+
+		<div class="row">
+			<label style="display: flex; align-items: center;">
+				<input type="checkbox" id="useOfficialSubtitles" style="margin-right: 5px;">
+				使用官方双字幕
+			</label>
+			<div class="hint">使用 Netflix 官方提供的字幕而不是 Google 翻译</div>
+		</div>
+
+		<div class="row">
+			<label for="officialSourceLang">官方源字幕语言</label>
+			<select id="officialSourceLang" name="officialSourceLang" disabled>
+				<option value="">先打开 Netflix 视频</option>
+			</select>
+			<div class="hint" id="officialSourceStatus">未获取</div>
+		</div>
+
+		<div class="row">
+			<label for="officialTargetLang">官方目标字幕语言</label>
+			<select id="officialTargetLang" name="officialTargetLang" disabled>
+				<option value="">先打开 Netflix 视频</option>
+			</select>
+			<div class="hint" id="officialTargetStatus">未获取</div>
+		</div>
+
 		<div class="status" id="status"></div>
 
 		<div class="row">

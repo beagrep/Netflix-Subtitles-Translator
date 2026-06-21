@@ -278,6 +278,19 @@
         setInterval(poll, 3000);
         poll();
 
+        // Listen for trigger capture messages from content script
+        window.addEventListener('message', function(ev) {
+          if (ev.source !== window || !ev.data) return;
+          if (ev.data.__nst === 'do-capture' && ev.data.language) {
+            console.log('[NST-SUB-Bridge] Received capture request for', ev.data.language);
+            window.__nstCaptureSubtitles(ev.data.language);
+          }
+          if (ev.data.__nst === 'trigger-capture' && ev.data.language) {
+            console.log('[NST-SUB-Bridge] Received trigger-capture request for', ev.data.language);
+            window.__nstCaptureSubtitles(ev.data.language);
+          }
+        });
+
         console.log('[NST-SUB-Bridge] Ready. Call __nstGetSubtitleInfo() or __nstCaptureSubtitles("en") in console');
       }.toString() + ')();';
       (document.head || document.documentElement).appendChild(s);
@@ -334,6 +347,10 @@
 
     if (addedCount > 0) {
       LOG('Added', addedCount, 'new cues for', language, 'total:', existingList.length);
+      // Notify that we have new cues for this language
+      window.dispatchEvent(new CustomEvent('nst-official-subtitles-updated', {
+        detail: { language: language, count: existingList.length }
+      }));
     }
   }
 
@@ -371,6 +388,17 @@
       return all;
     }
     return capturedSubtitles[language] || [];
+  }
+
+  /**
+   * Get count of captured subtitles per language
+   */
+  function getCapturedCounts() {
+    const counts = {};
+    Object.keys(capturedSubtitles).forEach(function(lang) {
+      counts[lang] = capturedSubtitles[lang].length;
+    });
+    return counts;
   }
 
   /**
@@ -488,6 +516,7 @@
     getSubtitles: getSubtitles,
     getSubtitleAtTime: getSubtitleAtTime,
     getAvailableLanguages: getAvailableLanguages,
+    getCapturedCounts: getCapturedCounts,
     getAllCaptured: function() { return capturedSubtitles; },
     captureLanguage: captureLanguage,
     getBilingualSubtitles: getBilingualSubtitles,
