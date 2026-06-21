@@ -10,6 +10,7 @@
   const db = NST.db || null;
   const loadJson = NST.utils ? NST.utils.loadJson : function() {};
   const gtansUrl = NST.config ? NST.config.gtansUrl : function() { return ''; };
+  const subtitleApi = NST.netflix ? NST.netflix.subtitleApi : null;
 
   // In-memory captures
   let captures = [];
@@ -127,7 +128,7 @@
     capture.translation = gtrans;
 
     if (NST.ui && NST.ui.subtitles) {
-      NST.ui.subtitles.applyTranslation(target, gtrans);
+      NST.ui.subtitles.applyTranslation(target, gtrans, capture.isOfficial);
     }
 
     // Also show in the center translator overlay if this is the current subtitle
@@ -140,6 +141,37 @@
   }
 
   /**
+   * Try to get an official Netflix subtitle for the current video time
+   */
+  function tryGetOfficialTranslation(capture) {
+    if (!subtitleApi || !capture || typeof capture.videoTime !== 'number') {
+      return null;
+    }
+
+    const targetLang = config.user.lang || 'en';
+    const cue = subtitleApi.getSubtitleAtTime(targetLang, capture.videoTime);
+
+    if (cue && cue.text && cue.text.trim()) {
+      LOG('Found official Netflix translation in', targetLang, ':', cue.text.substring(0, 50));
+      return cue.text;
+    }
+
+    // Also try looking within a small time window
+    const nearbyCues = subtitleApi.getSubtitles(targetLang);
+    if (nearbyCues && nearbyCues.length > 0) {
+      const nearby = nearbyCues.find(function(c) {
+        return Math.abs(c.startTime - capture.videoTime) < 2.0;
+      });
+      if (nearby && nearby.text && nearby.text.trim()) {
+        LOG('Found nearby official translation in', targetLang, ':', nearby.text.substring(0, 50));
+        return nearby.text;
+      }
+    }
+
+    return null;
+  }
+
+  /**
    * Auto-translate a subtitle, using cache first
    * Handles multi-line subtitles by translating each line separately
    */
@@ -149,6 +181,24 @@
     // If we already have a translation (revised one from imported file), don't re-translate
     if (capture && capture.translation && capture.translation.trim() && capture.status === 'ok') {
       LOG('Already have a translation for this subtitle, skipping auto-translate');
+      if (doneCallback) doneCallback();
+      return;
+    }
+
+    // Try to get an official Netflix subtitle first
+    const officialTranslation = tryGetOfficialTranslation(capture);
+    if (officialTranslation) {
+      LOG('Using official Netflix subtitle instead of Google Translate');
+      applyTranslation(capture.dl, officialTranslation, capture);
+      capture.translation = officialTranslation;
+      capture.status = 'ok';
+      capture.isOfficial = true;
+
+      const videoId = NST.netflix && NST.netflix.player ? NST.netflix.player.getNetflixVideoId() : null;
+      if (videoId && db && typeof capture.videoTime === 'number') {
+        db.recordSubtitle(videoId, capture.videoTime, capture.original, officialTranslation, 'ok');
+      }
+
       if (doneCallback) doneCallback();
       return;
     }

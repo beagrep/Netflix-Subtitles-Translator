@@ -108,6 +108,26 @@ body:not(.open-tr-panel) #translate-ext-resize-handle{
 #translate-ext #subtitle-wrap dl:not(.sent-tr-open){cursor:pointer; }
 #translate-ext #subtitle-wrap dl:not(.sent-tr-open):hover{background:#eee; }
 
+/* Official Netflix subtitle styles */
+#translate-ext #subtitle-wrap dl.nst-official{
+	border-left:3px solid #10b981;
+	padding-left:12px;
+}
+#translate-ext #subtitle-wrap dl.nst-official.nst-current{
+	border-left-color:#f6c200;
+}
+#translate-ext #subtitle-wrap dl .nst-official-badge{
+	display:inline-block;
+	background:#10b981;
+	color:white;
+	font-size:10px;
+	font-weight:bold;
+	padding:1px 5px;
+	border-radius:3px;
+	margin-right:5px;
+	vertical-align:middle;
+}
+
 
 #translate-ext #subtitle-wrap dl:not(.sent-tr-open) dd{display:none;}
 

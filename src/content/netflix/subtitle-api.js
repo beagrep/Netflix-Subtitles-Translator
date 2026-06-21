@@ -1,6 +1,6 @@
 /**
  * Netflix Subtitles Translator - Netflix Subtitle API Module
- * Attempts to access Netflix's internal subtitle API to get official subtitles.
+ * Accesses Netflix's internal subtitle API to get official subtitles.
  */
 (function(NST) {
   'use strict';
@@ -9,9 +9,10 @@
   const WARN = NST.utils ? NST.utils.WARN : function() { try { console.warn.apply(console, ['[NST-SUB-API]'].concat([].slice.call(arguments))); } catch(e){} };
 
   // Store captured subtitle data
-  let capturedSubtitles = [];
+  let capturedSubtitles = {}; // { 'en': [...], 'zh': [...] }
   let availableLanguages = [];
   let initialized = false;
+  let currentCapturingLanguage = null;
 
   /**
    * Inject the subtitle capture script into page context
@@ -30,9 +31,8 @@
       s.textContent = '(' + function() {
         console.log('[NST-SUB-Bridge] Injected into page context');
 
-        // Storage for subtitle data
-        let currentSubtitles = {};
-        let lastTimedTextEvent = null;
+        // Storage for subtitle cues
+        let collectedCues = {};
 
         // Function to find the Netflix player API
         function findPlayerAPI() {
@@ -67,27 +67,30 @@
           return null;
         }
 
-        // Function to get text tracks from video element
-        function getTextTracksFromVideo() {
-          try {
-            const video = document.querySelector('video');
-            if (video && video.textTracks) {
-              return Array.from(video.textTracks).map(function(t) {
-                return {
-                  id: t.id,
-                  kind: t.kind,
-                  language: t.language,
-                  label: t.label,
-                  mode: t.mode
-                };
-              });
-            }
-          } catch(e) {}
-          return [];
+        // Collect all cues from a track
+        function collectCuesFromTrack(track, language) {
+          if (!track.cues) return [];
+
+          const cues = Array.from(track.cues).map(function(cue) {
+            return {
+              startTime: cue.startTime,
+              endTime: cue.endTime,
+              text: cue.text
+            };
+          });
+
+          // Sort by start time
+          cues.sort(function(a, b) {
+            return a.startTime - b.startTime;
+          });
+
+          console.log('[NST-SUB-Bridge] Collected', cues.length, 'cues for', language);
+
+          return cues;
         }
 
-        // Function to listen to cue changes on text tracks
-        function listenToTextTracks() {
+        // Try to listen to all text tracks and collect cues
+        function setupTrackListeners() {
           try {
             const video = document.querySelector('video');
             if (!video || !video.textTracks) return;
@@ -95,36 +98,22 @@
             Array.from(video.textTracks).forEach(function(track) {
               if (track.kind === 'subtitles' || track.kind === 'captions') {
                 try {
-                  track.mode = 'showing'; // Try to enable the track
+                  // Try to enable the track temporarily to get cues
+                  const originalMode = track.mode;
 
-                  if (track.cues) {
-                    // Listen for cue change events
-                    track.addEventListener('cuechange', function() {
-                      const activeCues = Array.from(track.activeCues || []);
-                      if (activeCues.length > 0) {
-                        window.postMessage({
-                          __nst: 'subtitle-cue',
-                          language: track.language,
-                          label: track.label,
-                          cues: activeCues.map(function(cue) {
-                            return {
-                              startTime: cue.startTime,
-                              endTime: cue.endTime,
-                              text: cue.text
-                            };
-                          })
-                        }, '*');
-                      }
-                    });
+                  if (track.cues && track.cues.length === 0) {
+                    track.mode = 'hidden'; // Show but not visible
+                  }
 
-                    // Also get all cues if available
-                    const allCues = Array.from(track.cues || []);
-                    if (allCues.length > 0) {
+                  // Listen for cue changes
+                  track.addEventListener('cuechange', function() {
+                    const activeCues = Array.from(track.activeCues || []);
+                    if (activeCues.length > 0) {
                       window.postMessage({
-                        __nst: 'all-subtitle-cues',
+                        __nst: 'subtitle-cue',
                         language: track.language,
                         label: track.label,
-                        cues: allCues.map(function(cue) {
+                        cues: activeCues.map(function(cue) {
                           return {
                             startTime: cue.startTime,
                             endTime: cue.endTime,
@@ -133,7 +122,23 @@
                         })
                       }, '*');
                     }
+                  });
+
+                  // If we have cues, send them all
+                  if (track.cues && track.cues.length > 0) {
+                    const allCues = collectCuesFromTrack(track, track.language);
+                    collectedCues[track.language] = allCues;
+
+                    window.postMessage({
+                      __nst: 'all-subtitle-cues',
+                      language: track.language,
+                      label: track.label,
+                      cues: allCues
+                    }, '*');
                   }
+
+                  // Restore original mode
+                  track.mode = originalMode;
                 } catch(e) {
                   console.log('[NST-SUB-Bridge] Track listen error:', track.language, e.message);
                 }
@@ -144,57 +149,81 @@
           }
         }
 
-        // Monkey-patch to intercept subtitle data
-        (function() {
+        // Get all available text tracks
+        function getAvailableTracks() {
           try {
-            // Intercept the video element's addTextTrack method
             const video = document.querySelector('video');
-            if (video) {
-              const originalAddTextTrack = video.addTextTrack;
-              video.addTextTrack = function() {
-                console.log('[NST-SUB-Bridge] addTextTrack called:', arguments);
-                const track = originalAddTextTrack.apply(this, arguments);
-                window.postMessage({
-                  __nst: 'text-track-added',
-                  kind: track.kind,
-                  language: track.language,
-                  label: track.label
-                }, '*');
-                return track;
+            if (!video || !video.textTracks) return [];
+
+            return Array.from(video.textTracks).map(function(t) {
+              return {
+                id: t.id,
+                kind: t.kind,
+                language: t.language,
+                label: t.label,
+                mode: t.mode,
+                cueCount: (t.cues ? t.cues.length : 0)
               };
-            }
+            });
           } catch(e) {
-            console.log('[NST-SUB-Bridge] AddTextTrack patch error:', e.message);
-          }
-        })();
-
-        // Poll for player API and tracks
-        function pollPlayer() {
-          const p = findPlayerAPI();
-          if (p) {
-            window.postMessage({
-              __nst: 'player-found',
-              sessionId: p.sessionId
-            }, '*');
-          }
-
-          const tracks = getTextTracksFromVideo();
-          if (tracks.length > 0) {
-            window.postMessage({
-              __nst: 'text-tracks-found',
-              tracks: tracks
-            }, '*');
-
-            // Try to listen to them
-            listenToTextTracks();
+            console.log('[NST-SUB-Bridge] Get tracks error:', e.message);
+            return [];
           }
         }
+
+        // Expose functions to capture all subtitles for a specific language
+        window.__nstCaptureSubtitles = function(language) {
+          console.log('[NST-SUB-Bridge] Capturing subtitles for', language);
+
+          try {
+            const video = document.querySelector('video');
+            if (!video || !video.textTracks) {
+              return { error: 'No video/textTracks found' };
+            }
+
+            // Find the requested track
+            const track = Array.from(video.textTracks).find(function(t) {
+              return t.language === language || t.label === language;
+            });
+
+            if (!track) {
+              return { error: 'Track not found for: ' + language };
+            }
+
+            // Try to enable the track to get all cues
+            const originalMode = track.mode;
+            track.mode = 'hidden';
+
+            // Wait a bit and collect cues
+            setTimeout(function() {
+              const cues = collectCuesFromTrack(track, language);
+              collectedCues[language] = cues;
+
+              window.postMessage({
+                __nst: 'all-subtitle-cues',
+                language: language,
+                label: track.label,
+                cues: cues
+              }, '*');
+
+              console.log('[NST-SUB-Bridge] Captured', cues.length, 'cues for', language);
+
+              // Restore mode
+              track.mode = originalMode;
+            }, 500);
+
+            return { success: true, language: language };
+          } catch(e) {
+            return { error: e.message };
+          }
+        };
 
         // Expose a function to manually trigger exploration
         window.__nstGetSubtitleInfo = function() {
           const info = {
             player: null,
-            tracks: getTextTracksFromVideo()
+            tracks: getAvailableTracks(),
+            collectedCues: collectedCues
           };
 
           const p = findPlayerAPI();
@@ -227,17 +256,29 @@
 
           console.log('[NST-SUB-Bridge] Info:', info);
 
-          // Also try to listen again
-          listenToTextTracks();
+          // Also try to collect cues
+          setupTrackListeners();
 
           return info;
         };
 
-        // Start polling
-        setInterval(pollPlayer, 2000);
-        pollPlayer();
+        // Poll for tracks and cues
+        function poll() {
+          const tracks = getAvailableTracks();
+          if (tracks.length > 0) {
+            window.postMessage({
+              __nst: 'text-tracks-found',
+              tracks: tracks
+            }, '*');
+          }
 
-        console.log('[NST-SUB-Bridge] Ready. Call __nstGetSubtitleInfo() in console to explore');
+          setupTrackListeners();
+        }
+
+        setInterval(poll, 3000);
+        poll();
+
+        console.log('[NST-SUB-Bridge] Ready. Call __nstGetSubtitleInfo() or __nstCaptureSubtitles("en") in console');
       }.toString() + ')();';
       (document.head || document.documentElement).appendChild(s);
       s.remove();
@@ -248,44 +289,104 @@
   }
 
   /**
-   * Process subtitle cues
+   * Process subtitle cues and store them
    */
   function processCues(language, label, cues) {
-    LOG('Got', cues.length, 'cues for', language, label);
+    if (!language || !cues || cues.length === 0) return;
 
+    if (!capturedSubtitles[language]) {
+      capturedSubtitles[language] = [];
+    }
+
+    const existingList = capturedSubtitles[language];
+    const existingTimes = new Set(existingList.map(function(c) {
+      return c.startTime.toFixed(2);
+    }));
+
+    // Add new cues
+    let addedCount = 0;
     cues.forEach(function(cue) {
-      // Add to captured subtitles if not already there
-      const existing = capturedSubtitles.find(function(s) {
-        return s.language === language &&
-               Math.abs(s.startTime - cue.startTime) < 0.1 &&
-               s.text === cue.text;
-      });
-
-      if (!existing) {
-        capturedSubtitles.push({
+      const key = cue.startTime.toFixed(2);
+      if (!existingTimes.has(key)) {
+        existingList.push({
           language: language,
           label: label,
           startTime: cue.startTime,
           endTime: cue.endTime,
-          text: cue.text
+          text: cleanSubtitleText(cue.text)
         });
+        addedCount++;
+      } else {
+        // Update existing cue if needed
+        const existing = existingList.find(function(c) {
+          return Math.abs(c.startTime - cue.startTime) < 0.1;
+        });
+        if (existing && (!existing.text || existing.text.length < cue.text.length)) {
+          existing.text = cleanSubtitleText(cue.text);
+        }
       }
     });
 
     // Sort by time
-    capturedSubtitles.sort(function(a, b) {
+    existingList.sort(function(a, b) {
       return a.startTime - b.startTime;
     });
+
+    if (addedCount > 0) {
+      LOG('Added', addedCount, 'new cues for', language, 'total:', existingList.length);
+    }
+  }
+
+  /**
+   * Clean subtitle text - remove HTML tags, etc.
+   */
+  function cleanSubtitleText(text) {
+    if (!text) return '';
+    // Remove HTML tags
+    text = text.replace(/<[^>]*>/g, '');
+    // Decode HTML entities
+    text = text.replace(/&nbsp;/g, ' ');
+    text = text.replace(/&amp;/g, '&');
+    text = text.replace(/&lt;/g, '<');
+    text = text.replace(/&gt;/g, '>');
+    text = text.replace(/&quot;/g, '"');
+    text = text.replace(/&#39;/g, "'");
+    // Trim whitespace
+    text = text.trim();
+    // Normalize line breaks
+    text = text.replace(/\r\n/g, '\n');
+    text = text.replace(/\r/g, '\n');
+    return text;
   }
 
   /**
    * Get all captured subtitles for a specific language
    */
   function getSubtitles(language) {
-    if (!language) return capturedSubtitles;
-    return capturedSubtitles.filter(function(s) {
-      return s.language === language;
-    });
+    if (!language) {
+      const all = [];
+      Object.keys(capturedSubtitles).forEach(function(lang) {
+        all.push.apply(all, capturedSubtitles[lang]);
+      });
+      return all;
+    }
+    return capturedSubtitles[language] || [];
+  }
+
+  /**
+   * Get subtitle for a specific language and time
+   */
+  function getSubtitleAtTime(language, time) {
+    const list = capturedSubtitles[language];
+    if (!list) return null;
+
+    for (let i = 0; i < list.length; i++) {
+      const cue = list[i];
+      if (time >= cue.startTime && time <= cue.endTime) {
+        return cue;
+      }
+    }
+    return null;
   }
 
   /**
@@ -293,6 +394,53 @@
    */
   function getAvailableLanguages() {
     return availableLanguages;
+  }
+
+  /**
+   * Capture subtitles for a specific language
+   */
+  function captureLanguage(language) {
+    LOG('Triggering capture for language:', language);
+    currentCapturingLanguage = language;
+    // This will be handled by the injected script
+    window.postMessage({ __nst: 'do-capture', language: language }, '*');
+  }
+
+  /**
+   * Get bilingual subtitle pairs
+   */
+  function getBilingualSubtitles(lang1, lang2) {
+    const list1 = capturedSubtitles[lang1] || [];
+    const list2 = capturedSubtitles[lang2] || [];
+
+    const pairs = [];
+
+    // Match by time
+    list1.forEach(function(cue1) {
+      const matchingCue = list2.find(function(cue2) {
+        // Times overlap or are very close
+        return Math.abs(cue1.startTime - cue2.startTime) < 1.0 ||
+               (cue1.startTime <= cue2.endTime && cue2.startTime <= cue1.endTime);
+      });
+
+      if (matchingCue) {
+        pairs.push({
+          startTime: cue1.startTime,
+          endTime: cue1.endTime,
+          lang1: cue1.text,
+          lang2: matchingCue.text
+        });
+      } else {
+        pairs.push({
+          startTime: cue1.startTime,
+          endTime: cue1.endTime,
+          lang1: cue1.text,
+          lang2: null
+        });
+      }
+    });
+
+    return pairs;
   }
 
   /**
@@ -313,7 +461,9 @@
 
       if (ev.data.__nst === 'text-tracks-found') {
         availableLanguages = ev.data.tracks;
-        LOG('Available subtitle tracks found:', availableLanguages);
+        LOG('Available subtitle tracks found:', availableLanguages.map(function(t) {
+          return t.language + ': ' + t.label;
+        }));
       }
 
       if (ev.data.__nst === 'subtitle-cue') {
@@ -322,19 +472,11 @@
 
       if (ev.data.__nst === 'all-subtitle-cues') {
         processCues(ev.data.language, ev.data.label, ev.data.cues);
-        LOG('Got all cues for', ev.data.language, 'total:', capturedSubtitles.length);
+        LOG('Got all cues for', ev.data.language, 'total:', (capturedSubtitles[ev.data.language] || []).length);
       }
 
       if (ev.data.__nst === 'subtitle-info') {
         LOG('Subtitle info received:', ev.data.info);
-      }
-
-      if (ev.data.__nst === 'player-found') {
-        LOG('Netflix player found:', ev.data.sessionId);
-      }
-
-      if (ev.data.__nst === 'text-track-added') {
-        LOG('New text track added:', ev.data);
       }
     });
   }
@@ -344,8 +486,13 @@
   NST.netflix.subtitleApi = {
     init: init,
     getSubtitles: getSubtitles,
+    getSubtitleAtTime: getSubtitleAtTime,
     getAvailableLanguages: getAvailableLanguages,
     getAllCaptured: function() { return capturedSubtitles; },
+    captureLanguage: captureLanguage,
+    getBilingualSubtitles: getBilingualSubtitles,
+
+    // Helper to trigger explore
     triggerExplore: function() {
       window.postMessage({ __nst: 'trigger-explore' }, '*');
     }

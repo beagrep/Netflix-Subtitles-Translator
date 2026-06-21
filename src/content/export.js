@@ -236,17 +236,25 @@
     const getCapturesForCurrentVideo = NST.translator ? NST.translator.getCapturesForCurrentVideo : null;
     const captures = getCapturesForCurrentVideo ? getCapturesForCurrentVideo() : getCaptures();
 
+    // Count official subtitles
+    const officialCount = captures.filter(function(c) { return c.isOfficial; }).length;
+
     let header = '';
     header += '#+TITLE: ' + title + '\n';
     header += '#+DATE: ' + now.toISOString() + '\n';
     header += '#+URL: ' + url + '\n';
     header += '#+SOURCE_LANG: ' + (config.user.srcLang || 'auto') + '\n';
     header += '#+TARGET_LANG: ' + (config.user.lang || 'en') + '\n';
-    header += '#+SUBTITLE_COUNT: ' + captures.length + '\n\n';
+    header += '#+SUBTITLE_COUNT: ' + captures.length + '\n';
+    if (officialCount > 0) {
+      header += '#+OFFICIAL_SUBTITLES: ' + officialCount + '\n';
+    }
+    header += '\n';
 
     const body = captures.map(function(c) {
       const vt = (typeof c.videoTime === 'number' && isFinite(c.videoTime)) ? ' [' + fmtTime(c.videoTime) + ']' : '';
-      return '* ' + escOrgHeading(c.original) + vt + '\n\n' + (c.translation || '') + '\n';
+      const officialTag = c.isOfficial ? ' :OFFICIAL:' : '';
+      return '* ' + escOrgHeading(c.original) + vt + officialTag + '\n\n' + (c.translation || '') + '\n';
     }).join('\n');
 
     return header + body;

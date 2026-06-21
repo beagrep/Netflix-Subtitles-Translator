@@ -263,7 +263,7 @@
   /**
    * Apply a translation to a subtitle element
    */
-  function applyTranslation(dl, translation) {
+  function applyTranslation(dl, translation, isOfficial) {
     const S = config.SELECTORS;
     if (!dl) {
       const wrap = getSubtitleWrap();
@@ -271,10 +271,20 @@
     }
     if (dl) {
       dl.classList.add(S.translatedSentence);
+
+      // Add official subtitle marker
+      if (isOfficial) {
+        dl.classList.add('nst-official');
+      }
+
       const dd = dl.querySelector('dd');
       if (dd && typeof translation === 'string') {
         // Preserve line breaks in translation
-        dd.innerHTML = translation.replace(/\r?\n/g, '<br>');
+        let html = translation.replace(/\r?\n/g, '<br>');
+        if (isOfficial) {
+          html = '<span class="nst-official-badge" title="Official Netflix subtitle">✓</span> ' + html;
+        }
+        dd.innerHTML = html;
       }
     }
 

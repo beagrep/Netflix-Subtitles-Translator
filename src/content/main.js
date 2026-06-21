@@ -68,6 +68,78 @@
   }
 
   /**
+   * Load any official Netflix subtitles we have captured into our DB
+   */
+  function loadOfficialSubtitles() {
+    if (!subtitleApi || !translator || !db || !videoId) return;
+
+    const targetLang = config.user.lang || 'en';
+
+    const officialCaptures = subtitleApi.getSubtitles(targetLang);
+    LOG('Found', officialCaptures.length, 'official captions in', targetLang);
+
+    // For each official caption, see if we need to add it or update existing
+    officialCaptures.forEach(function(cue) {
+      // Try to find an existing capture by similar time
+      const existing = findExistingCaptureByTime(cue.startTime);
+      if (existing) {
+        // Update if we don't have a translation yet
+        if (!existing.translation || !existing.translation.trim() || existing.status !== 'ok') {
+          existing.translation = cue.text;
+          existing.status = 'ok';
+          existing.isOfficial = true;
+
+          // Update the UI
+          if (existing.dl) {
+            subtitlesUI.applyTranslation(existing.dl, cue.text);
+          }
+
+          // Update DB
+          db.recordSubtitle(videoId, cue.startTime, existing.original, cue.text, 'ok');
+        }
+      } else {
+        // We don't have the original subtitle for this time - skip for now
+      }
+    });
+  }
+
+  /**
+   * Find an existing capture by timestamp
+   */
+  function findExistingCaptureByTime(time) {
+    if (!translator) return null;
+
+    const allCaptures = translator.getCaptures();
+    for (let i = 0; i < allCaptures.length; i++) {
+      const c = allCaptures[i];
+      if (typeof c.videoTime === 'number' && Math.abs(c.videoTime - time) < 1.0) {
+        return c;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Trigger the capture of official Netflix subtitles
+   */
+  function triggerOfficialSubtitleCapture() {
+    if (!subtitleApi) return;
+
+    LOG('Triggering official subtitle capture');
+
+    // Log available languages
+    const languages = subtitleApi.getAvailableLanguages();
+    LOG('Available subtitle languages:', languages);
+
+    // Try to capture subtitles for current target language
+    const targetLang = config.user.lang || 'en';
+
+    // Call the injected helper - needs to run in page context
+    // We'll send a message to the injected bridge
+    window.postMessage({ __nst: 'trigger-capture', language: targetLang }, '*');
+  }
+
+  /**
    * Read subtitle and handle it
    */
   function readAndHandle(subtitleContainer) {
@@ -185,32 +257,116 @@
       translator.loadVideoSubtitles(videoId, function(entries) {
         if (!entries || !entries.length) {
           LOG('nstDB: no prior subtitles for video', videoId);
-          return;
-        }
-        LOG('nstDB: preloading', entries.length, 'subtitles for video', videoId);
+        } else {
+          LOG('nstDB: preloading', entries.length, 'subtitles for video', videoId);
 
-        entries.forEach(function(entry) {
-          // The entries are already created by translator.loadVideoSubtitles
-          // Just add them to captures and UI
-          translator.addCapture(entry);
+          entries.forEach(function(entry) {
+            // The entries are already created by translator.loadVideoSubtitles
+            // Just add them to captures and UI
+            translator.addCapture(entry);
 
-          // Add to UI
-          if (subtitlesUI) {
-            // Use the returned dl element directly instead of searching for it
-            entry.dl = subtitlesUI.add(entry.original, entry.videoTime);
-            // Apply translation if we have it
-            if (entry.translation && entry.dl) {
-              subtitlesUI.applyTranslation(entry.dl, entry.translation);
+            // Add to UI
+            if (subtitlesUI) {
+              // Use the returned dl element directly instead of searching for it
+              entry.dl = subtitlesUI.add(entry.original, entry.videoTime);
+              // Apply translation if we have it
+              if (entry.translation && entry.dl) {
+                subtitlesUI.applyTranslation(entry.dl, entry.translation);
+              }
             }
-          }
-        });
+          });
 
-        // Retry missing translations
-        if (translator) {
-          translator.retryMissingTranslations();
+          // Retry missing translations
+          if (translator) {
+            translator.retryMissingTranslations();
+          }
         }
+
+        // Also try to load any official Netflix subtitles we have captured
+        loadOfficialSubtitles();
       });
     }
+
+    // Try to capture official subtitles after a short delay
+    setTimeout(function() {
+      triggerOfficialSubtitleCapture();
+    }, 3000);
+  }
+
+  /**
+   * Load any official Netflix subtitles we have captured into our DB
+   */
+  function loadOfficialSubtitles() {
+    if (!subtitleApi || !translator || !db || !videoId) return;
+
+    const targetLang = config.user.lang || 'en';
+    const sourceLang = config.user.srcLang || 'auto';
+
+    const officialCaptures = subtitleApi.getSubtitles(targetLang);
+    LOG('Found', officialCaptures.length, 'official captions in', targetLang);
+
+    // For each official caption, see if we need to add it or update existing
+    officialCaptures.forEach(function(cue) {
+      // Try to find an existing capture by similar time
+      const existing = findExistingCaptureByTime(cue.startTime);
+      if (existing) {
+        // Update if we don't have a translation yet
+        if (!existing.translation || !existing.translation.trim() || existing.status !== 'ok') {
+          existing.translation = cue.text;
+          existing.status = 'ok';
+          existing.isOfficial = true;
+
+          // Update the UI
+          if (existing.dl) {
+            subtitlesUI.applyTranslation(existing.dl, cue.text);
+          }
+
+          // Update DB
+          db.recordSubtitle(videoId, cue.startTime, existing.original, cue.text, 'ok');
+        }
+      } else {
+        // We don't have the original subtitle for this time - skip for now
+      }
+    });
+  }
+
+  /**
+   * Find an existing capture by timestamp
+   */
+  function findExistingCaptureByTime(time) {
+    if (!translator) return null;
+
+    const allCaptures = translator.getCaptures();
+    for (let i = 0; i < allCaptures.length; i++) {
+      const c = allCaptures[i];
+      if (typeof c.videoTime === 'number' && Math.abs(c.videoTime - time) < 1.0) {
+        return c;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Trigger the capture of official Netflix subtitles
+   */
+  function triggerOfficialSubtitleCapture() {
+    if (!subtitleApi) return;
+
+    LOG('Triggering official subtitle capture');
+
+    // Log available languages
+    const languages = subtitleApi.getAvailableLanguages();
+    LOG('Available subtitle languages:', languages);
+
+    // Try to capture subtitles for current target language
+    const targetLang = config.user.lang || 'en';
+
+    // Call the injected helper
+    try {
+      // Note: this needs to be called in the page context
+      LOG('Call __nstCaptureSubtitles("' + targetLang + '") in console to capture subtitles');
+    } catch(e) {}
+  }
 
     // Set up mutation observer on subtitle container
     try {

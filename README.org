@@ -1031,67 +1031,43 @@ Fixed by moving the `chrome.runtime.onMessage` listener *inside* the IIFE in `sr
 
 * DONE 我通过 F12 debug 发现，在切换字幕的时候，Netflix 会有一个这样的 HTTP 调用，然后就可以获取其字幕，请帮我调研一下，从视频加载后的 DOM、JS 数据中，能否逆向出这个 API 调用出来？我的期望是自动把相关的双语字幕给拉取回来，这样我就不需要翻译了。
 
-curl 'https://ipv6-c106-sin001-ix.1.oca.nflxvideo.net/?o=1&v=25&e=1782039977&t=hzADwW97hbPAiJr-2xEUNogI6pHYBRjUi6mfUHbYlQWsUWsfg7dwzOiOgskJLNTuMyw9tdShWq3Yb2EvbJy4_1RXV0z8sCzxWUUGNbMAXA50jpeuJF88nnX-j8pXfqlU7xB8pqPcImjfKFpBKoInpv3tY65z0Bs1Dp5p1HxjA4L9Ikdq_QGPjMd3PD822h8tIpSxD9Lrmz492z0v8KyaDKm9-8Rk23_hIf4tJduZR3MxCxFvQKd2avIS6LaHuAGPcUQVAWDg91l0dmPkOio6je5dV6OnJXgyTw'
+** 调研结果 + 功能实现
 
-** 调研结果
+我已经完成了 Netflix 字幕 API 调研，并实现了官方字幕的自动捕获和使用功能。
 
-我已经为你添加了 Netflix 字幕 API 调研功能。以下是主要发现：
+*** 主要发现
 
-*** 1. 可访问的数据结构
+1. Netflix 的字幕数据 URL 是加密/签名的，不能直接从 DOM 中逆向工程出完整的 API URL
+2. 但可以通过 HTML5 的 =video.textTracks= API 来获取字幕数据
+3. 当字幕在 Netflix 中显示时，会触发 =cuechange= 事件，我们可以监听这些事件
 
-Netflix 页面提供了以下可以通过注入脚本访问的数据源：
+*** 已实现的功能
 
-- =window.netflix.appContext.state.playerApp.getAPI()= - Netflix 播放器 API
-- =video.textTracks= - 标准 HTML5 字幕轨道
-- 可以通过监听 =cuechange= 事件来获取当前显示的字幕
+1. **官方字幕优先使用**：当 Netflix 提供你目标语言的字幕时，会自动使用官方字幕而不是 Google 翻译
+2. **官方字幕标记**：UI 中会用绿色标记来显示哪些是官方字幕
+3. **自动收集**：扩展会自动收集显示的字幕并存储在数据库中
+4. **导出支持**：导出时会标记哪些是官方字幕
 
-*** 2. 新添加的模块
+*** 使用方法
 
-- =src/content/netflix/api-research.js= - API 探索模块，用于调试和研究
-- =src/content/netflix/subtitle-api.js= - 字幕 API 访问模块
+1. 在 Netflix 视频页面上，打开你想要的字幕语言（目标语言）
+2. 播放视频，字幕会被自动捕获
+3. 字幕会优先使用官方翻译，而不是 Google 翻译
+4. 在面板中，官方字幕会有绿色边框和 ✓ 标记
 
-*** 3. 使用方法
+*** 调试功能
 
-打开 Netflix 视频页面后，在浏览器控制台（F12）中可以：
+在浏览器控制台（F12）中：
 
-1. 调用 =__nstExplore()= 来探索 Netflix 的内部对象结构
-2. 调用 =__nstGetSubtitleInfo()= 来获取当前可用的字幕信息
-3. 查看 =[NST-API]= 和 =[NST-SUB-API]= 开头的日志输出
+- =__nstGetSubtitleInfo()= - 查看当前可用的字幕语言
+- =__nstCaptureSubtitles("en")= - 捕获指定语言的所有字幕
 
-*** 4. 发现的问题和限制
+*** 新增/修改的文件
 
-- Netflix 的字幕数据（如你提供的那个 nflxvideo.net URL）是加密/签名的，不能直接从 DOM 中逆向工程出完整的 API URL
-- URL 中的 =t= 参数是一个临时授权令牌，有过期时间（=e= 参数是过期时间戳）
-- 直接访问这些 URL 需要从 Netflix 的认证上下文中获取，这在扩展中比较复杂
-
-*** 5. 替代方案
-
-我们可以通过 HTML5 的 =textTracks= API 来获取字幕：
-
-- 当用户在 Netflix 中切换字幕语言时，字幕数据会通过 =cuechange= 事件传递
-- 我们可以监听这些事件并捕获字幕数据
-- 这样可以获取到 Netflix 提供的官方翻译字幕，而不需要用 Google Translate
-
-*** 6. 下一步
-
-目前的实现已经可以：
-- 检测可用的字幕语言
-- 捕获显示的字幕文本和时间戳
-- 存储这些字幕数据
-
-如果你需要我继续完善这个功能，可以：
-1. 实现双语字幕自动捕获（先切换到一种语言捕获，再切换到另一种语言）
-2. 把捕获的官方字幕直接存入数据库而不需要翻译
-3. 在 UI 中显示捕获到的字幕来源信息 \
-  -H 'Accept: */*' \
-  -H 'Accept-Language: en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7,mt;q=0.6,fr;q=0.5,ja;q=0.4,zh-TW;q=0.3,ko;q=0.2,es;q=0.1' \
-  -H 'Connection: keep-alive' \
-  -H 'Origin: https://www.netflix.com' \
-  -H 'Referer: https://www.netflix.com/' \
-  -H 'Sec-Fetch-Dest: empty' \
-  -H 'Sec-Fetch-Mode: cors' \
-  -H 'Sec-Fetch-Site: cross-site' \
-  -H 'User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36 Edg/149.0.0.0' \
-  -H 'sec-ch-ua: "Microsoft Edge";v="149", "Chromium";v="149", "Not)A;Brand";v="24"' \
-  -H 'sec-ch-ua-mobile: ?0' \
-  -H 'sec-ch-ua-platform: "macOS"'
+- =src/content/netflix/api-research.js= - API 探索模块
+- =src/content/netflix/subtitle-api.js= - 字幕 API 访问模块（主要功能）
+- =src/content/translator.js= - 修改以支持官方字幕优先
+- =src/content/ui/subtitles.js= - 添加官方字幕 UI 标记
+- =src/content/main.js= - 整合字幕 API
+- =style.css= - 添加官方字幕样式
+- =manifest.json= - 添加新模块
