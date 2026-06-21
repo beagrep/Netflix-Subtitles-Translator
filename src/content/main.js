@@ -16,6 +16,7 @@
   const translatePanel = NST.ui ? NST.ui.translatePanel : null;
   const player = NST.netflix ? NST.netflix.player : null;
   const subtitleReader = NST.netflix ? NST.netflix.subtitles : null;
+  const subtitleApi = NST.netflix ? NST.netflix.subtitleApi : null;
   const translator = NST.translator || null;
   const exportModule = NST.export || null;
 
@@ -276,6 +277,15 @@
         try {
           db.saveNow();
         } catch(e) {}
+      }
+    });
+
+    // Listen for subtitle data from the subtitle API
+    window.addEventListener('message', function(ev) {
+      if (ev.source !== window || !ev.data) return;
+
+      if (ev.data.__nst === 'all-subtitle-cues' || ev.data.__nst === 'subtitle-cue') {
+        LOG('Got subtitle cue data for', ev.data.language);
       }
     });
 

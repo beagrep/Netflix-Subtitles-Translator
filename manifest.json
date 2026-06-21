@@ -16,6 +16,8 @@
             "src/content/db.js",
             "src/content/netflix/player.js",
             "src/content/netflix/subtitles.js",
+            "src/content/netflix/api-research.js",
+            "src/content/netflix/subtitle-api.js",
             "src/content/ui/panel.js",
             "src/content/ui/subtitles.js",
             "src/content/ui/translate-panel.js",
