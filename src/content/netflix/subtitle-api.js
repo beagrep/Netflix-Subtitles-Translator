@@ -10,6 +10,7 @@
 
   // Store captured subtitle data
   let capturedSubtitles = {}; // { 'ja': [{startTime, endTime, text, lang}], ... }
+  let rawTTMLByLanguage = {}; // { 'ja': '<raw TTML XML string>', ... }
   let availableLanguages = []; // [{language, label}]
   let initialized = false;
 
@@ -640,6 +641,12 @@
               LOG('TTML response has no xml:lang, skipping:', url && url.substring(0, 100));
               return;
             }
+            // Retain raw TTML so the AI optimize flow / future exporter can hand it off.
+            // Keep the longest copy we've seen for each language (some TTML responses are
+            // partial updates after seek; we prefer the full listing).
+            if (!rawTTMLByLanguage[lang] || xmlText.length > rawTTMLByLanguage[lang].length) {
+              rawTTMLByLanguage[lang] = xmlText;
+            }
             var cues = parseTTML(xmlText, lang);
             LOG('Parsed TTML from XHR: lang=' + lang + ' cues=' + cues.length + ' url=' + (url && url.substring(0, 80)));
             registerLanguage(lang, null);
@@ -658,6 +665,17 @@
     });
   }
 
+  // Return raw TTML XML for a language, or null if we never intercepted it.
+  function getRawTTML(language) {
+    return (language && rawTTMLByLanguage[language]) ? rawTTMLByLanguage[language] : null;
+  }
+
+  function getAllRawTTML() {
+    const out = {};
+    Object.keys(rawTTMLByLanguage).forEach(function(l) { out[l] = rawTTMLByLanguage[l]; });
+    return out;
+  }
+
   // Export public API
   NST.netflix = NST.netflix || {};
   NST.netflix.subtitleApi = {
@@ -667,7 +685,9 @@
     getAvailableLanguages: getAvailableLanguages,
     getCapturedCounts: getCapturedCounts,
     getAllCaptured: function() { return capturedSubtitles; },
-    captureLanguage: captureLanguage
+    captureLanguage: captureLanguage,
+    getRawTTML: getRawTTML,
+    getAllRawTTML: getAllRawTTML
   };
 
   // Initialize

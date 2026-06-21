@@ -13,6 +13,7 @@
   const subtitlesUI = NST.ui ? NST.ui.subtitles : null;
   const pause = NST.ui ? NST.ui.pause : null;
   const centerTranslator = NST.ui ? NST.ui.centerTranslator : null;
+  const ttmlOverlay = NST.ui ? NST.ui.ttmlOverlay : null;
   const translatePanel = NST.ui ? NST.ui.translatePanel : null;
   const player = NST.netflix ? NST.netflix.player : null;
   const subtitleReader = NST.netflix ? NST.netflix.subtitles : null;
@@ -109,7 +110,64 @@
   }
 
   /**
-   * Find an existing capture by timestamp
+   * Pair source and target cues by time using a two-pointer greedy merge.
+   * Returns ordered segments: [{ startTime, endTime, src, tgt, kind }]
+   * where kind is 'pair' | 'srcOnly' | 'tgtOnly' and src/tgt may be null.
+   */
+  function pairCues(srcCues, tgtCues, tolerance) {
+    tolerance = (typeof tolerance === 'number') ? tolerance : 1.0;
+    const segments = [];
+    let i = 0, j = 0;
+    const tgtMatched = new Set();
+
+    while (i < srcCues.length || j < tgtCues.length) {
+      const srcCue = i < srcCues.length ? srcCues[i] : null;
+      // Find next unmatched target cue
+      let tgtCue = null;
+      for (let k = j; k < tgtCues.length; k++) {
+        if (!tgtMatched.has(k)) { tgtCue = tgtCues[k]; break; }
+      }
+
+      if (srcCue && tgtCue) {
+        const startsClose = Math.abs(srcCue.startTime - tgtCue.startTime) < tolerance;
+        const overlaps = srcCue.startTime <= tgtCue.endTime && tgtCue.startTime <= srcCue.endTime;
+        if (startsClose || overlaps) {
+          segments.push({
+            startTime: Math.min(srcCue.startTime, tgtCue.startTime),
+            endTime: Math.max(srcCue.endTime || srcCue.startTime, tgtCue.endTime || tgtCue.startTime),
+            src: srcCue, tgt: tgtCue, kind: 'pair'
+          });
+          // find the actual index of tgtCue starting at j
+          while (j < tgtCues.length && (tgtMatched.has(j) || tgtCues[j] !== tgtCue)) j++;
+          tgtMatched.add(j);
+          i++; j++;
+          continue;
+        }
+        // No match: emit the earlier one
+        if (srcCue.startTime <= tgtCue.startTime) {
+          segments.push({ startTime: srcCue.startTime, endTime: srcCue.endTime || srcCue.startTime, src: srcCue, tgt: null, kind: 'srcOnly' });
+          i++;
+        } else {
+          segments.push({ startTime: tgtCue.startTime, endTime: tgtCue.endTime || tgtCue.startTime, src: null, tgt: tgtCue, kind: 'tgtOnly' });
+          tgtMatched.add(j);
+          j++;
+        }
+      } else if (srcCue) {
+        segments.push({ startTime: srcCue.startTime, endTime: srcCue.endTime || srcCue.startTime, src: srcCue, tgt: null, kind: 'srcOnly' });
+        i++;
+      } else {
+        // remaining unmatched targets
+        segments.push({ startTime: tgtCue.startTime, endTime: tgtCue.endTime || tgtCue.startTime, src: null, tgt: tgtCue, kind: 'tgtOnly' });
+        tgtMatched.add(j);
+        j++;
+      }
+    }
+    segments.sort(function(a, b) { return a.startTime - b.startTime; });
+    return segments;
+  }
+
+  /**
+   * Find an existing capture by timestamp (matches either source or target-only time)
    */
   function findExistingCaptureByTime(time) {
     if (!translator) return null;
@@ -124,38 +182,12 @@
     return null;
   }
 
-  /**
-   * Trigger the capture of official Netflix subtitles
-   */
-  function triggerOfficialSubtitleCapture() {
-    if (!subtitleApi) return;
-
-    LOG('Triggering official subtitle capture');
-
-    // Log available languages
-    const languages = subtitleApi.getAvailableLanguages();
-    LOG('Available subtitle languages:', languages);
-
-    // If using official subtitles with configured source/target, capture both
-    if (config.user.useOfficialSubtitles) {
-      if (config.user.officialSourceLang) {
-        LOG('Capturing official source language:', config.user.officialSourceLang);
-        subtitleApi.captureLanguage(config.user.officialSourceLang);
-      }
-      if (config.user.officialTargetLang) {
-        LOG('Capturing official target language:', config.user.officialTargetLang);
-        subtitleApi.captureLanguage(config.user.officialTargetLang);
-      }
-      setTimeout(loadBilingualSubtitles, 2000);
-    } else {
-      // Default behavior: just capture translation target
-      const targetLang = config.user.lang || 'en';
-      window.postMessage({ __nst: 'trigger-capture', language: targetLang }, '*');
-    }
-  }
+  const SRC_ONLY_TEXT = '（无目标字幕）';
+  const TGT_ONLY_TEXT = '（无源字幕）';
 
   /**
-   * Load bilingual subtitles (source + target) into the panel
+   * Load bilingual subtitles (source + target) into the panel.
+   * Uses a two-way merge so source-only AND target-only segments are both kept.
    */
   function loadBilingualSubtitles() {
     if (!subtitleApi || !translator || !db || !videoId) return;
@@ -174,70 +206,134 @@
 
     LOG('Bilingual subtitles: source=' + srcCues.length + ' target=' + tgtCues.length);
 
-    if (srcCues.length === 0) {
-      LOG('No source subtitles captured yet - make sure to select', srcLang, 'in Netflix subtitle menu');
+    if (srcCues.length === 0 && tgtCues.length === 0) {
+      LOG('No subtitles captured yet - switch subtitle languages in Netflix menu first');
       return;
     }
 
     let addedCount = 0;
+    const segments = pairCues(srcCues, tgtCues, 1.0);
 
-    // For each source cue, find matching target cue and add to panel
-    srcCues.forEach(function(srcCue) {
-      // Find matching target cue by time
-      const matchingTgt = tgtCues.find(function(tc) {
-        return Math.abs(srcCue.startTime - tc.startTime) < 1.0 ||
-               (srcCue.startTime <= tc.endTime && tc.startTime <= srcCue.endTime);
-      });
+    segments.forEach(function(seg) {
+      let original, translation, videoTime, soloSide = null;
 
-      const translation = matchingTgt ? matchingTgt.text : '';
+      if (seg.kind === 'pair') {
+        original = seg.src.text;
+        translation = seg.tgt.text;
+        videoTime = seg.src.startTime;
+      } else if (seg.kind === 'srcOnly') {
+        original = seg.src.text;
+        translation = SRC_ONLY_TEXT;
+        videoTime = seg.src.startTime;
+        soloSide = 'src';
+      } else {
+        // tgtOnly: heading is the target text; body notes missing source
+        original = seg.tgt.text;
+        translation = TGT_ONLY_TEXT;
+        videoTime = seg.tgt.startTime;
+        soloSide = 'tgt';
+      }
 
-      // Check if this subtitle already exists
-      const existing = findExistingCaptureByTime(srcCue.startTime);
+      const existing = findExistingCaptureByTime(videoTime);
       if (existing) {
-        // Update existing if we have a better translation
-        if (translation && (!existing.translation || !existing.translation.trim() || existing.status !== 'ok')) {
-          existing.translation = translation;
+        let needUpdate = false;
+        let headingChanged = false;
+        let isPaired = false;
+        if (seg.kind === 'pair') {
+          isPaired = true;
+          if (existing.tgtOnly && !existing.srcOnly) {
+            existing.original = seg.src.text;
+            existing.translation = seg.tgt.text;
+            headingChanged = true;
+            needUpdate = true;
+          } else if (!existing.translation || existing.translation === SRC_ONLY_TEXT || existing.translation === TGT_ONLY_TEXT || existing.status !== 'ok') {
+            existing.translation = translation;
+            needUpdate = true;
+          }
           existing.status = 'ok';
           existing.isOfficial = true;
-          if (existing.dl) {
-            subtitlesUI.applyTranslation(existing.dl, translation);
+          existing.srcOnly = false;
+          existing.tgtOnly = false;
+          soloSide = null;
+        } else if (seg.kind === 'srcOnly' && (!existing.translation || existing.translation === '' || existing.translation === TGT_ONLY_TEXT)) {
+          existing.translation = SRC_ONLY_TEXT;
+          existing.status = 'ok';
+          existing.isOfficial = true;
+          existing.srcOnly = true;
+          existing.tgtOnly = false;
+          needUpdate = true;
+        } else if (seg.kind === 'tgtOnly' && (!existing.original || existing.original === '')) {
+          existing.original = original;
+          existing.translation = TGT_ONLY_TEXT;
+          existing.status = 'ok';
+          existing.isOfficial = true;
+          existing.tgtOnly = true;
+          existing.srcOnly = false;
+          needUpdate = true;
+        }
+        // Always make sure isOfficial / solo badges reflect the current segment
+        // state, even if the translation text itself did not change (covers the
+        // DB-reload case where entries don't carry flags from storage).
+        if (existing.dl && existing.isOfficial && existing.translation) {
+          var dlClasses = existing.dl.classList;
+          var alreadyApplied = dlClasses.contains('nst-official') && dlClasses.contains('sent-tr-open');
+          // Only re-render DD content if heading changed, translation changed,
+          // or the official badge hasn't been applied yet.
+          var dd = existing.dl.querySelector('dd');
+          var textNeedsApply = needUpdate || headingChanged || !alreadyApplied ||
+            !dd || dd.getAttribute('data-nst-applied') !== existing.translation;
+          if (headingChanged) {
+            subtitlesUI.replaceHeading(existing.dl, existing.original);
           }
-          db.recordSubtitle(videoId, srcCue.startTime, srcCue.text, translation, 'ok');
+          if (textNeedsApply) {
+            subtitlesUI.applyTranslation(existing.dl, existing.translation, true);
+            if (dd) dd.setAttribute('data-nst-applied', existing.translation);
+          }
+          subtitlesUI.markSolo(existing.dl, soloSide);
+        } else if (needUpdate && existing.dl) {
+          if (headingChanged) {
+            subtitlesUI.replaceHeading(existing.dl, existing.original);
+          }
+          subtitlesUI.applyTranslation(existing.dl, existing.translation, true);
+          var dd2 = existing.dl.querySelector('dd');
+          if (dd2) dd2.setAttribute('data-nst-applied', existing.translation);
+          subtitlesUI.markSolo(existing.dl, soloSide);
+        }
+        if (needUpdate) {
+          db.recordSubtitle(videoId, videoTime, existing.original, existing.translation, 'ok');
         }
         return;
       }
 
-      // Create new entry
       const entry = {
-        original: srcCue.text,
+        original: original,
         translation: translation,
         ts: Date.now(),
-        videoTime: srcCue.startTime,
+        videoTime: videoTime,
         dl: null,
         isOfficial: true,
-        status: translation ? 'ok' : 'pending'
+        status: 'ok',
+        srcOnly: seg.kind === 'srcOnly',
+        tgtOnly: seg.kind === 'tgtOnly'
       };
 
       translator.addCapture(entry);
 
-      // Add to UI
       if (subtitlesUI) {
         entry.dl = subtitlesUI.add(entry.original, entry.videoTime);
         subtitlesUI.setCurrent(entry.dl);
-        if (translation) {
-          subtitlesUI.applyTranslation(entry.dl, translation);
-        }
+        subtitlesUI.applyTranslation(entry.dl, entry.translation, true);
+        subtitlesUI.markSolo(entry.dl, soloSide);
       }
 
-      // Save to DB
       if (db) {
-        db.recordSubtitle(videoId, srcCue.startTime, srcCue.text, translation, entry.status);
+        db.recordSubtitle(videoId, videoTime, entry.original, entry.translation, 'ok');
       }
 
       addedCount++;
     });
 
-    LOG('Added', addedCount, 'bilingual subtitles to panel');
+    LOG('Added', addedCount, 'bilingual segments to panel (paired + source-only + target-only)');
   }
 
   /**
@@ -480,6 +576,12 @@
 
     // Start polling
     pollForSubtitles();
+
+    // Start TTML-driven overlay so target-only captions (on-screen text,
+    // signs, letters) appear even when Netflix renders no native source cue.
+    if (ttmlOverlay && ttmlOverlay.start) {
+      ttmlOverlay.start();
+    }
   }
 
   // Initialize when DOM is ready
@@ -592,6 +694,49 @@
           }
         }
         sendResponse({ ok: true });
+        return true;
+      }
+
+      if (request.getAIPayload) {
+        // Build and return the AI optimization payload (org text + raw TTML + meta)
+        try {
+          const payload = (exportModule && exportModule.buildAIPayload)
+            ? exportModule.buildAIPayload()
+            : (typeof window.__nstBuildAIPayload === 'function' ? window.__nstBuildAIPayload() : null);
+          if (!payload) {
+            sendResponse({ ok: false, error: 'Export module not ready.' });
+          } else {
+            sendResponse({ ok: true, payload: payload });
+          }
+        } catch(e) {
+          sendResponse({ ok: false, error: 'AI payload error: ' + (e && e.message) });
+        }
+        return true;
+      }
+
+      if (request.importAIResult) {
+        // Import AI-optimized org text back into the panel/DB (same flow as file import)
+        try {
+          let vid = videoId;
+          if (!vid && player && player.getNetflixVideoId) {
+            vid = player.getNetflixVideoId();
+          }
+          if (!vid) {
+            const match = window.location.pathname.match(/\/watch\/(\d+)/);
+            vid = match ? match[1] : null;
+          }
+          if (!vid) {
+            sendResponse({ ok: false, error: 'Open a Netflix video first.' });
+            return true;
+          }
+          if (typeof window.__nstImportOrg === 'function') {
+            window.__nstImportOrg(request.importAIResult, vid, sendResponse);
+          } else {
+            sendResponse({ ok: false, error: 'Extension not initialized on this page.' });
+          }
+        } catch(e) {
+          sendResponse({ ok: false, error: 'AI import error: ' + (e && e.message) });
+        }
         return true;
       }
     }

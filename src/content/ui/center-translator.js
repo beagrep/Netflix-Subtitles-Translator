@@ -105,6 +105,23 @@
 	}
 
 	/**
+	 * Show a translation as HTML (caller must escape user content and may
+	 * include markup like the [译] prefix badge).  Does NOT start an auto-hide
+	 * timer — caller is responsible for calling clear() when the content
+	 * should disappear.  Used by the TTML-driven overlay.
+	 */
+	function showTranslationHtml(html) {
+		const el = getEl();
+		if (!el || !html) return;
+		if (!config.user.overlayEnabled) { clear(); return; }
+
+		if (hideTimeout) { clearTimeout(hideTimeout); hideTimeout = null; }
+		applySettings();
+		el.innerHTML = html;
+		el.classList.add(config.SELECTORS.mainTranslateOpenClass);
+	}
+
+	/**
 	 * Show the center translator
 	 */
 	function show() {
@@ -154,6 +171,7 @@
 		init: init,
 		translate: translate,
 		showTranslation: showTranslation,
+		showTranslationHtml: showTranslationHtml,
 		show: show,
 		clear: clear,
 		applySettings: applySettings

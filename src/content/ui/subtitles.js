@@ -261,6 +261,53 @@
   }
 
   /**
+   * Replace the heading (dt) text of an existing DL, preserving the timestamp element.
+   */
+  function replaceHeading(dl, newSubtitle) {
+    if (!dl) return;
+    const dt = dl.querySelector('dt');
+    if (!dt) return;
+    const tsEl = dt.querySelector('time.nst-ts');
+    const tsHtml = tsEl ? tsEl.outerHTML + ' ' : '';
+    const lines = newSubtitle.split(/\r?\n/);
+    const processed = lines.map(processLineForDisplay).join('<br>');
+    dt.innerHTML = tsHtml + processed;
+  }
+
+  /**
+   * Mark a DL as source-only or target-only (adds a small badge + CSS class).
+   * Pass null/undefined to clear solo markers.
+   */
+  function markSolo(dl, side) {
+    if (!dl) return;
+    dl.classList.remove('nst-solo-src', 'nst-solo-tgt');
+    const dt = dl.querySelector('dt');
+    if (dt) {
+      const existingBadge = dt.querySelector('.nst-solo-badge');
+      if (existingBadge) existingBadge.remove();
+    }
+    if (side === 'src') {
+      dl.classList.add('nst-solo-src');
+      if (dt) {
+        const b = document.createElement('span');
+        b.className = 'nst-solo-badge nst-solo-badge-src';
+        b.textContent = '源 only';
+        b.title = '仅源字幕，无对应翻译';
+        dt.insertBefore(b, dt.firstChild);
+      }
+    } else if (side === 'tgt') {
+      dl.classList.add('nst-solo-tgt');
+      if (dt) {
+        const b = document.createElement('span');
+        b.className = 'nst-solo-badge nst-solo-badge-tgt';
+        b.textContent = '译 only';
+        b.title = '仅译文字幕，无源字幕（画面文字等）';
+        dt.insertBefore(b, dt.firstChild);
+      }
+    }
+  }
+
+  /**
    * Apply a translation to a subtitle element
    */
   function applyTranslation(dl, translation, isOfficial) {
@@ -482,7 +529,9 @@
     clearAll: clearAll,
     setTranslatePanel: setTranslatePanel,
     getSubtitleWrap: getSubtitleWrap,
-    isElementFullyVisible: isElementFullyVisible
+    isElementFullyVisible: isElementFullyVisible,
+    markSolo: markSolo,
+    replaceHeading: replaceHeading
   };
 
 })(window.NST = window.NST || {});

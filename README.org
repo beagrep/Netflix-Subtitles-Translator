@@ -1347,3 +1347,144 @@ utils.js:8 [NST] Got subtitle XML response from https://ipv6-c106-sin001-ix.1.oc
 目标两种语言，仍需在 Netflix 字幕菜单里切换一次让两种语言的 XHR 各触发
 一次；之后两种语言的 cue 都会按 =capturedSubtitles[lang]= 独立保存，
 =loadBilingualSubtitles()= 会按时间戳配对显示。
+
+* DONE 我发现双语字幕会有一些问题：（v1.60）
+
+1. 当剧本身是韩剧时，有时候屏幕上显示一些文字（比如信、纸条什么的），韩语字幕就不会显示了（以免重复吧），但汉语字幕是会在这个时候有显示的；其他任何语言的剧估计都会有类似的现象，原生字幕不需要的时候，翻译字幕就会需要显示。
+
+2. 你帮我生成的双语字幕，会只以源字幕为准，将相同（或相近？）时间段的目标字幕当作源字幕的翻译，但如果源字幕因为不需要而缺失的时候，目标字幕也就无显示了，这种场景下我希望你反过来处理，即：
+
+   - 如果有时间对应的两条字幕，以源<>目标为准
+   - 如果某段时间只有一条字幕（可能是源，也可能是目标），请无论如何都要显示，
+
+     可以是这样的：
+
+     #+begin_src org
+       ,* 源字幕 (MM:SS)
+       （无目标字幕）
+     #+end_src
+     或这样的：
+
+     #+begin_src org
+       ,* 目标字幕 （MM:SS）
+       （无源字幕）
+     #+end_src
+
+3. 帮我在 Popup 中生成一个按钮，「AI 字幕优化」，它会：
+
+   1. 调用一个本地服务，在后台会调用 claude code
+   2. 把双语字幕（原来要保存为 .org 格式文件的内容）传给这个服务，两个官方字幕原 ttml 文件也可以传过去
+   3. 参考我的 AI 提示词，你可以在此基础上再修改，比如我们现在已经不是机翻的了，而是官方的双语字幕，因此里面的人物姓名翻译都是准确的，不需要再猜测了，等等，这些关键信息都可以加到提示词里去我理解。另外，原生字幕一般会有 CC（为听障等特殊观众准备的场景描述等），在翻译的字幕上一般没有，这种需要帮忙在双语字幕中补齐。
+
+      #+begin_src org
+        ,** DONE 我有一个 .org 文件，里面是某部电视的字幕，它的翻译是用谷歌机翻的，不是很准，问题比较多。
+        源文件改为 =~/Downloads/Netflix-2026-06-19T14-49-06-964Z.org=（共 1095 条字幕，约 1 小时 5 分钟）。
+        按每 10 分钟分 7 段并行校正翻译，最后拼接为
+        =~/Downloads/Revised-Netflix-2026-06-19T14-49-06-964Z.org=。
+        统一了人物名（车世界、申瑞丽、丹心、孙宰翰等）、区分了古今语气
+        （丹心使用朝鲜古风敬语，现代角色用日常口语），并修正了机翻常见错误：
+        연애 고자 → 恋爱白痴；필름 끊기다 → 喝断片；맥주병 → 旱鸭子；
+        맞선 → 相亲；뺑끼 치다 → 装醉；화촉 올리다 → 办婚礼；
+        낙동강 오리알 → 孤立无援；광대 → 戏子；사주단자 → 庚帖；
+        승은 상궁 → 承恩尚宫 等。校正后所有 1095 条韩文原文与时间戳
+        均与原文逐条对齐。济州海女方言以括号内标准语注释处理。
+        风格指南保留在 =/tmp/translation-style-guide.md=。
+
+        ,** DONE 再翻译一个文件，~/Downloads/Netflix-2026-06-20T15-00-44-934Z.org，是上面那个文件的开头漏掉的部分，没多少句，比较简单。
+        已翻译为 =~/Downloads/Revised-Netflix-2026-06-20T15-00-44-934Z.org=（共 30 条字幕，约 [0:46-2:19] 开头部分）。
+        修正了关键错误：일/이/삼 → 一/二/三（不是天/这/三）；청에서 온 첨자도다 → 来自清朝的银饰刀（不是清代下标）；
+        은장도 → 银妆刀（不是恩藏岛）；유밀과 → 油菓（朝鲜传统点心）；신서리 → 申瑞丽；단심 → 丹心。
+      #+end_src
+4. 帮我解释后续 extra 字幕显示这一块，如果我在 Netflix 的菜单里选了原生字幕，碰到只有目标字幕中有字幕，原生字幕没有字幕的时间段，我们的目标字幕能否让它单独显示出来？
+
+   我担心这个的主要原因，还是在于我们之前的实现逻辑，应该是我们不断地在后台监控网页的 DOM，发现字幕元素变化时，触发其翻译、显示等，这个实现方式效率不高，且问题比较多：
+
+   - 时间不准确，从 DOM 变化到我们监控（其实就是定时轮循？）发现时，会有延迟
+   - 字幕会有遗漏，万一字幕时间比较短，说话比较快，一闪而过，可能我们都无法发现其变化。
+
+   但现在我们有了官方的 TTML，这一块是不是可以重构一下，以后不需要使用定时任务实现了，也不需要谷歌机翻了，全部用 AI 就可以搞定。
+
+5. 我理解你是不是无法在插件里直接调用 claude code 命令行工具？如果那样的话，可以实现一个本地的 HTTP 服务，服务端口只对 localhost 开放，协议自己实现，然后在这个服务里调用 claude code；然后我们的插件调用这个服务。
+
+基本的想法就是这样，看看你有没有什么不明白的，可以先制定一个计划和设计，然后再实现。
+
+已实现（v1.60）：
+
+1+2. *双语字幕双向合并*——=src/content/main.js= 的 =loadBilingualSubtitles()=
+   现在用双指针 greedy merge 对 src/tgt 两个 cue 数组做时间对齐（=pairCues()=
+   辅助函数，容差 1 秒），返回三种 segment：=pair=（配对）、=srcOnly=、=tgtOnly=。
+   - 配对条目：保持原有行为（源做 heading，译做 body，绿色 ✓ 徽章）。
+   - 源字幕单独出现：body 填 =（无目标字幕）=，打 =:SRC_ONLY:= org tag。
+   - 目标字幕单独出现（典型：韩剧画面文字、信、纸条等只发中文/英文翻译、不发
+     韩语原生字幕的场景）：heading 用目标字幕文本，body 填 =（无源字幕）=，
+     打 =:TGT_ONLY:= org tag。这样即使 DOM 里没有原生源字幕，目标字幕也会被
+     加入侧栏、导出 org、并显示。
+   - 侧栏里 solo 条目用黄色 =源 only= / 蓝色 =译 only= 徽章区分。
+   - =src/content/export.js= 的 =buildOrgExport()= 会正确输出三种 tag，
+     =parseOrgFile()= 能解析这些 tag 做往返。
+   - manifest 版本 1.52 → 1.60。
+
+3+5. *「AI 字幕优化」按钮 + 本地 HTTP 服务*
+   - Popup 新增紫色「AI 字幕优化」按钮（=popup.html= / =popup.js=）。
+     点击后：1) 先 GET =http://127.0.0.1:8765/api/health= 检查本地服务，
+     未启动时在按钮下方提示 =python3 server/nst_server.py=；
+     2) 通过新的 ={getAIPayload}= message 向 content script 拿到 org 文本、
+     两个 TTML 原文（=src/content/netflix/subtitle-api.js= 新保留了
+     =rawTTMLByLanguage=，暴露 =getRawTTML()=）以及 title/URL/语言；
+     3) 用 =multipart/form-data= POST 到 =/api/optimize=，拿回 =job_id=；
+     4) 每 3 秒轮询 =/api/status/<id>=；完成后把结果自动
+       a) 作为 .org 文件下载（=Revised-<title>-<timestamp>.org=），
+       b) 通过新的 ={importAIResult}= message 走现有 import 流程回灌到侧栏/DB。
+   - 本地服务 =server/nst_server.py=（Python 3 标准库，零依赖）：
+     - 监听 =127.0.0.1=，默认端口 8765（可通过 =--port= 或 =NST_PORT= 覆盖）。
+     - 每个 job 写到一个临时目录，把 =bilingual.org=、可选的 =source.ttml= /
+       =target.ttml= 落盘，把提示词写到 =prompt.md=，然后
+       cwd 在该目录下调用 =claude -p <prompt> --bare
+       --dangerously-skip-permissions --add-dir <jobdir>=。
+     - 提示词说明：译文是 Netflix 官方译文（不是机翻），人名地名已准确不要再猜；
+       源语里的 CC（说话人标签 =[xxx]=、拟声 =(웃음)=、=♪=、旁白标签等）
+       要在目标语里补齐；=:SRC_ONLY:= 条目要翻译原文并替换占位符；=:TGT_ONLY:=
+       条目把 =（无源字幕）= 替换成类似 =[画面文字]= 的提示；所有标题/timestamp/
+       tag/header 行保持原样，不要重排、删除或合并条目；输出纯 org 文本，
+       不要 markdown 围栏、不要前后解释。
+     - 并发用 =ThreadingHTTPServer=，每小时清理过期 job 目录。
+     - =server/run.sh= 是便捷启动脚本。
+
+4. *TTML 驱动的 target-only 字幕叠加与 DOM 轮询的后续重构建议*
+
+   代码侧新增了 =src/content/ui/ttml-overlay.js=（注册在 manifest.json 里，位于
+   =center-translator.js= 之后、=translator.js= 之前）：
+   - 以 250ms setInterval 轮询 =player.getVideoTime()=，在官方双语模式开启时
+     用 =subtitleApi.getSubtitles(src/tgtLang)= 的 TTML 数据查找当前时刻的
+     active cue；
+   - 如果 Netflix 原生 =.player-timedtext= DOM 里可见字幕、或 TTML 里存在
+     对应 source cue，则什么都不做——现有 MutationObserver/500ms fallback 路径
+     会通过 =translator.autoTranslate()= 在 overlay 里显示译文，避免重复；
+   - 如果 source cue 不存在但 target cue 存在（即画面文字/只有译文字幕的
+     场景），就在现有居中 overlay 里显示目标字幕，前缀加一个蓝色 =[译]= 徽章
+     （=style.css= 里 =.nst-overlay-prefix= 样式），让观众知道这是我们从 TTML
+     额外挂上去的字幕。
+
+   这样就回答了「只选原生字幕时，只有译文的段落能否单独显示」——能。但是这只是
+   一个加法改动，没完全重构掉旧的 DOM 轮询路径，理由：
+
+   - 旧路径（=src/content/main.js:run()= 里的 MutationObserver + 500ms
+     setInterval + =readAndHandle()=）负责的不只是 overlay：它还负责
+     侧栏行的实时高亮、双击 seek 同步、translator 缓存、DB 持久化、单词点击
+     翻译、Google 翻译 fallback。TTML 路由虽然拿到了完整 cue 列表，但要完全
+     替代它，需要：
+     - 加一个 =timeupdate= 驱动的 loop，按当前时间定位 active cue 并驱动侧栏
+       高亮/居中 overlay；
+     - 绕过 =readAndHandle()=，从 TTML cue 直接往 translator/DB 写；
+     - 在 cue 边界（不是 DOM 变化）触发翻译（官方翻译优先、Google 兜底）；
+     - 处理 seek / 非线性播放（=player.isNonLinear()= 已有基础）。
+   - 这条路是可行的，而且 TTML 时间戳是毫秒精确的，能消除 DOM 轮询带来的延迟
+     和「一闪而过的字幕漏掉」问题；但它是一次比较大的重构（translator.js 的
+     autoTranslate、panel 的 highlight、字幕去重逻辑都要改），建议下一个版本
+     单独做。当前 v1.60 先把数据层（双向合并、raw TTML、target-only overlay、
+     AI 优化通路）铺好，重构 live 显示逻辑就顺理成章了。
+   - Google 翻译目前仍作为 fallback 保留：如果某段没有官方目标字幕（老剧、
+     小语种、用户没打开官方双语），=translator.autoTranslate()= 还会走 Google。
+     AI 优化按钮在拿到字幕后可以对任意字幕做后处理，未来如果希望完全用 AI 代替
+     Google，可以在 translator 里把 fallback 换成调本地服务——本次没动这一块
+     以避免范围蔓延。

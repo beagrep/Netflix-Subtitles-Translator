@@ -23,6 +23,7 @@
             "src/content/ui/translate-panel.js",
             "src/content/ui/pause.js",
             "src/content/ui/center-translator.js",
+            "src/content/ui/ttml-overlay.js",
             "src/content/translator.js",
             "src/content/export.js",
             "src/content/main.js"
@@ -40,8 +41,8 @@
     },
     "manifest_version": 2,
     "name": "Netflix Subtitles Translator",
-    "permissions": [ "contextMenus", "tabs", "storage", "unlimitedStorage" ],
+    "permissions": [ "contextMenus", "tabs", "storage", "unlimitedStorage", "http://127.0.0.1:*/*" ],
     "short_name": "Netflix Subtitles Translator",
     "update_url": "https://clients3.google.com/service/update2/crx",
-    "version": "1.52"
+    "version": "1.60"
 }

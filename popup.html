@@ -34,6 +34,8 @@ main { padding: 12px; }
 .link { display: block; text-align: center; margin-top: 10px; color: #3091d3; cursor: pointer; text-decoration: none; font-size: 12px; }
 .link:hover { text-decoration: underline; }
 .status { font-size: 11px; color: #2a8a2a; height: 12px; margin-top: 4px; }
+.status.error { color: #c53030; }
+code { background: #f3f0ff; padding: 1px 3px; border-radius: 2px; font-family: ui-monospace, Menlo, monospace; }
 </style>
 </head>
 <body>
@@ -116,6 +118,12 @@ main { padding: 12px; }
 		<div class="row">
 			<button id="export">Export captured subtitles (.org)</button>
 			<div class="hint">Downloads an org file with each subtitle as a level-1 heading (ready for org-anki).</div>
+		</div>
+
+		<div class="row">
+			<button id="ai-optimize" style="background: #8b5cf6;">AI 字幕优化</button>
+			<div class="hint">调用本地 Claude Code 服务补齐 CC、修正字幕。需先启动本地服务：<br><code style="font-size:10px;">python3 server/nst_server.py</code></div>
+			<div class="status" id="ai-status" style="height: auto; min-height: 12px;"></div>
 		</div>
 
 		<div class="row">

@@ -128,6 +128,58 @@ body:not(.open-tr-panel) #translate-ext-resize-handle{
 	vertical-align:middle;
 }
 
+/* Solo-side badges (only source or only target present) */
+#translate-ext #subtitle-wrap dl .nst-solo-badge{
+	display:inline-block;
+	font-size:9px;
+	font-weight:bold;
+	padding:1px 4px;
+	border-radius:3px;
+	margin-right:4px;
+	vertical-align:middle;
+	font-family:sans-serif;
+}
+#translate-ext #subtitle-wrap dl .nst-solo-badge.nst-solo-badge-src{
+	background:#fef3c7;
+	color:#92400e;
+	border:1px solid #fbbf24;
+}
+#translate-ext #subtitle-wrap dl .nst-solo-badge.nst-solo-badge-tgt{
+	background:#dbeafe;
+	color:#1e3a8a;
+	border:1px solid #60a5fa;
+}
+#translate-ext #subtitle-wrap dl.nst-solo-src{
+	background:#fffbeb !important;
+	border-left-color:#f59e0b !important;
+}
+#translate-ext #subtitle-wrap dl.nst-solo-tgt{
+	background:#eff6ff !important;
+	border-left-color:#3b82f6 !important;
+}
+#translate-ext #subtitle-wrap dl.nst-solo-src dd,
+#translate-ext #subtitle-wrap dl.nst-solo-tgt dd{
+	color:#b45309;
+	font-style:italic;
+}
+#translate-ext #subtitle-wrap dl.nst-solo-tgt dd{
+	color:#1e40af;
+}
+
+/* [译] marker prefix for TTML-driven target-only overlay */
+#translate-ext-main-tr .nst-overlay-prefix{
+	display:inline-block;
+	background:rgba(59,130,246,0.85);
+	color:white;
+	font-size:0.6em;
+	padding:2px 6px;
+	border-radius:3px;
+	margin-right:8px;
+	vertical-align:middle;
+	font-weight:bold;
+	letter-spacing:0.5px;
+}
+
 
 #translate-ext #subtitle-wrap dl:not(.sent-tr-open) dd{display:none;}
 

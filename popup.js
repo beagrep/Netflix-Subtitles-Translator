@@ -329,6 +329,169 @@
 		}
 	});
 
+	// ---- AI optimize button -------------------------------------------------
+	var AI_SERVER_BASE = 'http://127.0.0.1:8765';
+	var aiPollHandle = null;
+
+	function setAIStatus(msg, isError) {
+		var el = document.querySelector('#ai-status');
+		if (!el) return;
+		el.textContent = msg || '';
+		el.classList.toggle('error', !!isError);
+	}
+
+	function downloadText(filename, text) {
+		var blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+		var url = URL.createObjectURL(blob);
+		var a = document.createElement('a');
+		a.href = url;
+		a.download = filename;
+		document.body.appendChild(a);
+		a.click();
+		setTimeout(function() {
+			document.body.removeChild(a);
+			URL.revokeObjectURL(url);
+		}, 100);
+	}
+
+	function aiFetchJSON(url, opts) {
+		return fetch(url, opts).then(function(r) {
+			return r.text().then(function(txt) {
+				var data;
+				try { data = JSON.parse(txt); } catch(e) { data = { ok: false, error: 'Non-JSON response: ' + txt.slice(0, 200) }; }
+				if (!r.ok && !data.error) data.error = 'HTTP ' + r.status;
+				return data;
+			});
+		});
+	}
+
+	async function runAIOptimize() {
+		var btn = document.querySelector('#ai-optimize');
+		if (btn.disabled) return;
+		setAIStatus('正在检查本地服务…', false);
+
+		var activeTab;
+		var tabs = await new Promise(function(res) { chrome.tabs.query({ active: true, currentWindow: true }, res); });
+		activeTab = tabs[0];
+		if (!activeTab || !activeTab.url || !activeTab.url.match(/netflix\.com\/watch\//)) {
+			setAIStatus('请先打开 Netflix 播放页。', true);
+			return;
+		}
+
+		// Check health endpoint first
+		try {
+			var health = await aiFetchJSON(AI_SERVER_BASE + '/api/health');
+			if (!health || !health.ok) throw new Error('health check failed');
+		} catch(e) {
+			setAIStatus('本地服务未启动，请先运行：python3 server/nst_server.py', true);
+			return;
+		}
+
+		// Ask content script for payload
+		var payloadResp = await new Promise(function(res) {
+			chrome.tabs.sendMessage(activeTab.id, { getAIPayload: true }, function(r) {
+				if (chrome.runtime.lastError) res(null); else res(r);
+			});
+		});
+		if (!payloadResp || !payloadResp.ok || !payloadResp.payload) {
+			setAIStatus(payloadResp && payloadResp.error ? payloadResp.error : '无法获取字幕数据。', true);
+			return;
+		}
+		var pl = payloadResp.payload;
+		if (!pl.org || pl.org.length < 50) {
+			setAIStatus('字幕内容太少，先导出/抓取字幕后再试。', true);
+			return;
+		}
+
+		setAIStatus('正在上传到本地服务…', false);
+		btn.disabled = true;
+
+		// Build multipart form
+		var form = new FormData();
+		form.append('org', pl.org);
+		if (pl.title) form.append('title', pl.title);
+		if (pl.url) form.append('url', pl.url);
+		if (pl.srcLang) form.append('src_lang', pl.srcLang);
+		if (pl.tgtLang) form.append('tgt_lang', pl.tgtLang);
+		if (pl.srcTTML) {
+			form.append('src_ttml', new Blob([pl.srcTTML], { type: 'text/xml' }), 'source.ttml');
+		}
+		if (pl.tgtTTML) {
+			form.append('tgt_ttml', new Blob([pl.tgtTTML], { type: 'text/xml' }), 'target.ttml');
+		}
+
+		var submit;
+		try {
+			submit = await aiFetchJSON(AI_SERVER_BASE + '/api/optimize', { method: 'POST', body: form });
+		} catch(e) {
+			setAIStatus('上传失败：' + e.message, true);
+			btn.disabled = false;
+			return;
+		}
+		if (!submit || !submit.job_id) {
+			setAIStatus((submit && submit.error) ? submit.error : '提交任务失败。', true);
+			btn.disabled = false;
+			return;
+		}
+		var jobId = submit.job_id;
+		setAIStatus('Claude 正在优化字幕，请稍候…（可能需要数分钟）', false);
+
+		// Poll status
+		var pollInterval = 3000;
+		var pollStart = Date.now();
+		function poll() {
+			aiFetchJSON(AI_SERVER_BASE + '/api/status/' + encodeURIComponent(jobId)).then(function(status) {
+				if (!status) {
+					setAIStatus('获取状态失败，请重试。', true);
+					btn.disabled = false;
+					return;
+				}
+				if (status.status === 'running' || status.status === 'queued') {
+					var elapsed = Math.round((Date.now() - pollStart) / 1000);
+					setAIStatus('优化中… ' + elapsed + 's（claude 工作中）', false);
+					aiPollHandle = setTimeout(poll, pollInterval);
+					return;
+				}
+				if (status.status === 'error') {
+					setAIStatus('优化失败：' + (status.error || 'unknown'), true);
+					btn.disabled = false;
+					return;
+				}
+				if (status.status === 'done' && status.result) {
+					setAIStatus('优化完成，正在导入并下载…', false);
+					var revised = status.result;
+					// Download as .org file
+					var safeTitle = (pl.title || 'subtitles').replace(/[\\/:*?"<>|]/g, '_').slice(0, 80);
+					var fname = 'Revised-' + safeTitle + '-' + new Date().toISOString().replace(/[:.]/g, '-') + '.org';
+					downloadText(fname, revised);
+					// Import back into panel/DB
+					chrome.tabs.sendMessage(activeTab.id, { importAIResult: revised }, function(resp) {
+						if (chrome.runtime.lastError) {
+							setAIStatus('已下载但自动导入失败：' + chrome.runtime.lastError.message, true);
+						} else if (resp && resp.ok) {
+							setAIStatus('完成！已导入 ' + resp.count + ' 条修订字幕。', false);
+						} else {
+							setAIStatus('已下载，自动导入错误：' + ((resp && resp.error) || 'unknown'), true);
+						}
+						btn.disabled = false;
+					});
+					return;
+				}
+				// Unexpected status
+				setAIStatus('未知状态：' + status.status, true);
+				btn.disabled = false;
+			}).catch(function(e) {
+				setAIStatus('状态查询失败：' + e.message, true);
+				btn.disabled = false;
+			});
+		}
+		poll();
+	}
+
+	document.querySelector('#ai-optimize').addEventListener('click', function() {
+		runAIOptimize();
+	});
+
 	document.addEventListener('DOMContentLoaded', restore_options);
 
 	// Poll for updated language status every 2 seconds

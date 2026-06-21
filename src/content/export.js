@@ -17,13 +17,16 @@
   const config = NST.config || { user: {} };
   const getCaptures = NST.translator ? NST.translator.getCaptures : function() { return []; };
 
+  // Placeholder bodies used for source-only / target-only segments.
+  const SRC_ONLY_TEXT = '（无目标字幕）';
+  const TGT_ONLY_TEXT = '（无源字幕）';
+
   /**
    * Parse a time string like [M:SS], [MM:SS], [H:MM:SS], [HH:MM:SS] into seconds
    */
   function parseTimeStr(timeStr) {
     if (!timeStr) return null;
     const parts = timeStr.split(':').map(Number);
-    // Check if all parts are valid numbers
     if (parts.some(isNaN)) return null;
     if (parts.length === 2) {
       return parts[0] * 60 + parts[1];
@@ -31,6 +34,18 @@
       return parts[0] * 3600 + parts[1] * 60 + parts[2];
     }
     return null;
+  }
+
+  /**
+   * Strip org tags (" :TAG1::TAG2:") from the end of a heading line and
+   * return { text, tags: [] }.
+   */
+  function stripOrgTags(line) {
+    // Org tags are a colon-separated list at the end: whitespace then
+    // ":TAG1:TAG2:..:" at end of line.
+    const m = line.match(/^(.*?)\s+:([A-Za-z0-9_@#%:-]+):\s*$/);
+    if (!m) return { text: line, tags: [] };
+    return { text: m[1], tags: m[2].split(':').filter(Boolean) };
   }
 
   /**
@@ -45,24 +60,24 @@
     while (i < lines.length) {
       const line = lines[i];
 
-      // Skip header lines (start with #+)
       if (inHeader && line.match(/^#\+/)) {
         i++;
         continue;
       }
       inHeader = false;
 
-      // Check for a new heading (* Original subtitle)
       const headingMatch = line.match(/^\*\s+(.*?)\s*$/);
       if (headingMatch) {
-        // Start collecting original subtitle lines
         const originalLines = [];
         let videoTime = null;
+        let tags = [];
 
-        // Add the first line (without the *)
-        let firstLine = headingMatch[1].replace(/\\\*/g, '*');
+        let firstLineRaw = headingMatch[1].replace(/\\\*/g, '*');
+        // Strip org tags from first line before extracting timestamp
+        const firstStripped = stripOrgTags(firstLineRaw);
+        tags = firstStripped.tags;
+        let firstLine = firstStripped.text;
 
-        // Check if first line has a timestamp
         const firstLineTimeMatch = firstLine.match(/^(.*?)\s+\[([^\]]+)\]\s*$/);
         if (firstLineTimeMatch) {
           firstLine = firstLineTimeMatch[1];
@@ -72,25 +87,21 @@
           originalLines.push(firstLine);
         }
 
-        i++; // Move past the heading line
+        i++;
 
-        // Continue reading lines until we hit the next heading or find translation
         let translationStarted = false;
         const translationLines = [];
 
         while (i < lines.length) {
           const nextLine = lines[i];
 
-          // Check if this is a new heading — stop if yes
           if (nextLine.match(/^\*\s+/)) {
             break;
           }
 
-          // Check if we haven't found timestamp yet and this line has one
           if (!videoTime && !translationStarted) {
             const timeMatch = nextLine.match(/^(.*?)\s+\[([^\]]+)\]\s*$/);
             if (timeMatch) {
-              // Found a timestamp on this line
               const textPart = timeMatch[1].replace(/\\\*/g, '*');
               if (textPart.trim()) {
                 originalLines.push(textPart);
@@ -101,33 +112,32 @@
             }
           }
 
-          // If it's an empty line and we haven't started translation yet,
-          // this might be the separator between original and translation
           if (!nextLine.trim() && !translationStarted && originalLines.length > 0) {
             translationStarted = true;
             i++;
             continue;
           }
 
-          // If translation has started, or we already have a timestamp and
-          // this isn't a heading, add to translation (or original if no
-          // separator found yet but we have a timestamp)
           if (translationStarted || videoTime !== null) {
             translationStarted = true;
             translationLines.push(nextLine);
           } else {
-            // No timestamp yet, still collecting original lines
             originalLines.push(nextLine.replace(/\\\*/g, '*'));
           }
 
           i++;
         }
 
-        // Create the entry
+        const originalText = originalLines.join('\n');
+        const translationText = translationLines.join('\n').trim();
+
         const entry = {
-          original: originalLines.join('\n'),
-          videoTime: videoTime !== null ? videoTime : 0, // Fallback to 0 if no timestamp found
-          translation: translationLines.join('\n').trim()
+          original: originalText,
+          videoTime: videoTime !== null ? videoTime : 0,
+          translation: translationText,
+          isOfficial: tags.indexOf('OFFICIAL') !== -1,
+          srcOnly: tags.indexOf('SRC_ONLY') !== -1,
+          tgtOnly: tags.indexOf('TGT_ONLY') !== -1
         };
         entries.push(entry);
         continue;
@@ -187,30 +197,35 @@
           updated++;
         });
 
-        // Now, reload all subtitles from DB for this video
+        // Now reload the panel with the imported entries directly so that
+        // isOfficial / srcOnly / tgtOnly flags survive the import (the DB
+        // schema doesn't persist those flags yet).
         if (translator && subtitlesUI) {
-          // Clear current captures and UI
           translator.clearCaptures();
           subtitlesUI.clearAll();
-          // Make sure currentVideoId is set correctly
           if (translator.setCurrentVideoId) {
             translator.setCurrentVideoId(videoId);
           }
-          // Load from DB
-          translator.loadVideoSubtitles(videoId, function(loadedEntries) {
-            if (loadedEntries && loadedEntries.length) {
-              LOG('Import: reloading', loadedEntries.length, 'entries from DB');
-              loadedEntries.forEach(function(capture) {
-                translator.addCapture(capture);
-                // Add to UI
-                const dl = subtitlesUI.add(capture.original, capture.videoTime);
-                capture.dl = dl;
-                // Apply translation if available
-                if (capture.translation) {
-                  subtitlesUI.applyTranslation(dl, capture.translation);
-                }
-              });
-            }
+          entries.forEach(function(entry) {
+            const capture = {
+              original: entry.original,
+              translation: entry.translation || '',
+              videoTime: entry.videoTime,
+              ts: Date.now(),
+              dl: null,
+              isOfficial: !!entry.isOfficial,
+              srcOnly: !!entry.srcOnly,
+              tgtOnly: !!entry.tgtOnly,
+              status: 'ok'
+            };
+            translator.addCapture(capture);
+            const dl = subtitlesUI.add(capture.original, capture.videoTime);
+            capture.dl = dl;
+            let soloSide = null;
+            if (capture.srcOnly) soloSide = 'src';
+            else if (capture.tgtOnly) soloSide = 'tgt';
+            subtitlesUI.applyTranslation(dl, capture.translation, capture.isOfficial);
+            subtitlesUI.markSolo(dl, soloSide);
           });
         }
 
@@ -236,28 +251,67 @@
     const getCapturesForCurrentVideo = NST.translator ? NST.translator.getCapturesForCurrentVideo : null;
     const captures = getCapturesForCurrentVideo ? getCapturesForCurrentVideo() : getCaptures();
 
-    // Count official subtitles
     const officialCount = captures.filter(function(c) { return c.isOfficial; }).length;
+    const srcOnlyCount = captures.filter(function(c) { return c.srcOnly; }).length;
+    const tgtOnlyCount = captures.filter(function(c) { return c.tgtOnly; }).length;
+
+    const effectiveSrcLang = (config.user.useOfficialSubtitles && config.user.officialSourceLang)
+      ? config.user.officialSourceLang : (config.user.srcLang || 'auto');
+    const effectiveTgtLang = (config.user.useOfficialSubtitles && config.user.officialTargetLang)
+      ? config.user.officialTargetLang : (config.user.lang || 'en');
 
     let header = '';
     header += '#+TITLE: ' + title + '\n';
     header += '#+DATE: ' + now.toISOString() + '\n';
     header += '#+URL: ' + url + '\n';
-    header += '#+SOURCE_LANG: ' + (config.user.srcLang || 'auto') + '\n';
-    header += '#+TARGET_LANG: ' + (config.user.lang || 'en') + '\n';
+    header += '#+SOURCE_LANG: ' + effectiveSrcLang + '\n';
+    header += '#+TARGET_LANG: ' + effectiveTgtLang + '\n';
     header += '#+SUBTITLE_COUNT: ' + captures.length + '\n';
     if (officialCount > 0) {
-      header += '#+OFFICIAL_SUBTITLES: ' + officialCount + '\n';
+      header += '#+OFFICIAL_SUBTITLES: ' + officialCount;
+      if (srcOnlyCount || tgtOnlyCount) {
+        header += ' (source-only=' + srcOnlyCount + ', target-only=' + tgtOnlyCount + ')';
+      }
+      header += '\n';
     }
     header += '\n';
 
     const body = captures.map(function(c) {
       const vt = (typeof c.videoTime === 'number' && isFinite(c.videoTime)) ? ' [' + fmtTime(c.videoTime) + ']' : '';
-      const officialTag = c.isOfficial ? ' :OFFICIAL:' : '';
-      return '* ' + escOrgHeading(c.original) + vt + officialTag + '\n\n' + (c.translation || '') + '\n';
+      const tagParts = [];
+      if (c.isOfficial) tagParts.push('OFFICIAL');
+      if (c.srcOnly) tagParts.push('SRC_ONLY');
+      if (c.tgtOnly) tagParts.push('TGT_ONLY');
+      const tags = tagParts.length ? ' :' + tagParts.join(':') + ':' : '';
+      let translation = c.translation || '';
+      if (c.srcOnly && !translation) translation = SRC_ONLY_TEXT;
+      if (c.tgtOnly && !translation) translation = TGT_ONLY_TEXT;
+      return '* ' + escOrgHeading(c.original) + vt + tags + '\n\n' + translation + '\n';
     }).join('\n');
 
     return header + body;
+  }
+
+  /**
+   * Build the payload for AI subtitle optimization:
+   * { org, srcTTML, tgtTTML, title, url, srcLang, tgtLang }
+   */
+  function buildAIPayload() {
+    const subtitleApi = NST.netflix && NST.netflix.subtitleApi ? NST.netflix.subtitleApi : null;
+    const srcLang = (config.user.useOfficialSubtitles && config.user.officialSourceLang)
+      ? config.user.officialSourceLang : (config.user.srcLang || 'auto');
+    const tgtLang = (config.user.useOfficialSubtitles && config.user.officialTargetLang)
+      ? config.user.officialTargetLang : (config.user.lang || 'en');
+
+    return {
+      org: buildOrgExport(),
+      srcTTML: subtitleApi ? subtitleApi.getRawTTML(srcLang) : null,
+      tgtTTML: subtitleApi ? subtitleApi.getRawTTML(tgtLang) : null,
+      title: getNetflixTitle(),
+      url: getCanonicalWatchUrl(),
+      srcLang: srcLang,
+      tgtLang: tgtLang
+    };
   }
 
   /**
@@ -293,12 +347,18 @@
   window.__nstExportOrg = exportOrg;
   window.__nstImportOrg = importOrg;
 
+  // Expose on window for backwards compatibility / message handlers
+  window.__nstBuildAIPayload = buildAIPayload;
+
   // Export public API
   NST.export = {
     buildOrgExport: buildOrgExport,
+    buildAIPayload: buildAIPayload,
     exportOrg: exportOrg,
     parseOrgFile: parseOrgFile,
-    importOrg: importOrg
+    importOrg: importOrg,
+    SRC_ONLY_TEXT: SRC_ONLY_TEXT,
+    TGT_ONLY_TEXT: TGT_ONLY_TEXT
   };
 
 })(window.NST = window.NST || {});
