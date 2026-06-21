@@ -1296,3 +1296,54 @@ text-tracks-found 的输出），可能失败点：
 
 已在回复中给用户 3 段 console 诊断脚本（查 bridge 痕迹 / 查 player API / 查
 video.textTracks），等贴出输出后再定位到具体层并修。
+
+* DONE 从下面这段 console log 里是不是说明能截获下载 subtitle 的调用？
+
+
+#+begin_src text
+utils.js:8 [NST] Netflix XHR response: https://ipv6-c106-sin001-ix.1.oca.nflxvideo.net/?o=1&v=25&e=1782076255&t=urL-GIFVglspoju10doRF26qGSHvxfUzhfbUEF_7TmzbS7S2fIlPcdAm5StJIIvfGjz2wtpl9pjruZQUu2KQp8W_f_x1NA2VF11hTZPeW_UgW-iMeDbuIkuf-qhVCg9RxlJ3vUzOnF0LB7ux4b7a9LLU1I6bN0PmRtKZkYXBne4YpaumSRN_TKmJY55zw_fhvqXqnhHvK0ZWL5lmbSeY0vTcZgjmutfPBUItdz8-kMuEAylyHWEeZkIRFzwTEDJh6G20DMQe02lYGKDaJNHe0PIFcbL_5rY9cg 200 text/xml
+utils.js:8 [NST] Got subtitle XML response from https://ipv6-c106-sin001-ix.1.oca.nflxvideo.net/?o=1&v=25&e=1782076255&t=urL-GIFVglspoju10doRF26qGSH
+
+#+end_src
+
+
+如果是这样的话，在官方 subtitle 返回的 xml 里，有相关的语言信息（xml:lang="ko"）：
+#+begin_src text
+<?xml version="1.0" encoding="utf-8"?>
+<tt ttp:contentProfiles="http://www.w3.org/ns/ttml/profile/imsc1.1/text" xmlns="http://www.w3.org/ns/ttml" xmlns:nttm="http://www.netflix.com/ns/ttml#metadata" xmlns:tt="http://www.w3.org/ns/ttml" xmlns:ttp="http://www.w3.org/ns/ttml#parameter" xmlns:tts="http://www.w3.org/ns/ttml#styling" xmlns:xml="http://www.w3.org/XML/1998/namespace" ttp:tickRate="10000000" ttp:timeBase="media" xml:lang="ko">
+#+end_src
+
+你是不是可以重新实现相关的代码了？
+
+是的，XHR 拦截确实已经抓到 TTML 响应了——之前只是 content-script 侧收到
+={__nst:'subtitle-xml-response', url, xml}= 后只打了一行 log，没有做解析。
+已在 =src/content/netflix/subtitle-api.js= 中重新实现：
+
+1. 在 =subtitle-xml-response= 处理器里用 DOMParser 解析 XML，从根元素
+   =<tt>= 读 =xml:lang=（先尝试 =getAttributeNS(XML/1998/namespace, 'lang')=，
+   失败再退到 =getAttribute('xml:lang')=），拿到语言代码（如 =ko=、=ja=）。
+2. 调用现有的 =parseTTML()= 解析所有 =<p begin=.. end=..>= 为
+   ={startTime, endTime, text}= cue 数组；text 提取已支持 =<br>= 留换行和子
+   =<span>= 递归。
+3. 通过新加的 =registerLanguage(lang, label)= 把该语言加入
+   =availableLanguages=，popup 下拉框里就能看到了；内置了一个常见语言代码
+   → 本地名的映射表 =LANG_LABELS=（=ko→한국어=、=ja→日本語= 等），在
+   player API/textTracks 没有返回更友好的 label 时作为兜底。
+4. 把解析出来的 cues 通过 =processCues(lang, label, cues)= 存入
+   =capturedSubtitles[lang]=，并派发 =nst-official-subtitles-updated=
+   事件，main.js 已有的双语配对逻辑 =loadBilingualSubtitles()= 会自动响应。
+5. 加强了桥接里 XHR load 回调的响应体提取：优先 =responseText=，为空时
+   再尝试 =response=（string / ArrayBuffer 走 TextDecoder）；判定"是 XML"
+   的条件从 =content-type 含 xml= 扩展到也接受 response body 以 =<?xml=
+   开头或包含 =<tt=，防 responseType 非 text 时漏抓。
+6. =parseTTMLTime= 补了 tick 格式（=`12345678t`=，按 Netflix 常用
+   =tickRate=10000000= 除得秒）和 =HH:MM:SS:frames= 格式；之前只支持
+   时钟格式和纯秒数。
+7. =text-tracks-found= 合并逻辑也改成：如果已有条目的 label 只是原始语
+   言代码，player API 传来的友好 label（如 =Japanese=）会覆盖上去。
+8. manifest.json 版本号 1.51 → 1.52。
+
+注意：Netflix 一次只下载当前激活的那条字幕轨道的 TTML——要收集双语的源/
+目标两种语言，仍需在 Netflix 字幕菜单里切换一次让两种语言的 XHR 各触发
+一次；之后两种语言的 cue 都会按 =capturedSubtitles[lang]= 独立保存，
+=loadBilingualSubtitles()= 会按时间戳配对显示。

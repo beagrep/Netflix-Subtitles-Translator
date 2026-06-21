@@ -13,6 +13,45 @@
   let availableLanguages = []; // [{language, label}]
   let initialized = false;
 
+  // Friendly names for common Netflix subtitle language codes,
+  // used as labels when the player/textTrack API doesn't provide one
+  // (e.g. when we learn a language purely from intercepted TTML).
+  const LANG_LABELS = {
+    'en': 'English', 'en-US': 'English (US)', 'en-GB': 'English (UK)',
+    'ja': '日本語', 'ko': '한국어', 'zh': '中文', 'zh-CN': '中文 (简体)',
+    'zh-Hans': '中文 (简体)', 'zh-TW': '中文 (繁體)', 'zh-Hant': '中文 (繁體)',
+    'es': 'Español', 'es-ES': 'Español (España)', 'es-MX': 'Español (Latino)',
+    'fr': 'Français', 'de': 'Deutsch', 'it': 'Italiano', 'pt': 'Português',
+    'pt-BR': 'Português (Brasil)', 'ru': 'Русский', 'ar': 'العربية',
+    'hi': 'हिन्दी', 'th': 'ไทย', 'vi': 'Tiếng Việt', 'id': 'Bahasa Indonesia',
+    'ms': 'Bahasa Melayu', 'tr': 'Türkçe', 'nl': 'Nederlands', 'pl': 'Polski',
+    'sv': 'Svenska', 'da': 'Dansk', 'fi': 'Suomi', 'nb': 'Norsk Bokmål',
+    'no': 'Norsk', 'el': 'Ελληνικά', 'he': 'עברית', 'cs': 'Čeština',
+    'hu': 'Magyar', 'ro': 'Română', 'uk': 'Українська', 'ca': 'Català',
+    'fil': 'Filipino', 'bg': 'Български'
+  };
+
+  function labelForLang(lang) {
+    if (!lang) return '';
+    return LANG_LABELS[lang] || lang;
+  }
+
+  /**
+   * Register a language in availableLanguages if not already present.
+   * Prefers a non-code label over the raw language code.
+   */
+  function registerLanguage(language, label) {
+    if (!language) return;
+    const niceLabel = label && label !== language ? label : labelForLang(language);
+    const existing = availableLanguages.find(function(t) { return t.language === language; });
+    if (!existing) {
+      availableLanguages.push({ language: language, label: niceLabel, source: 'ttml' });
+      LOG('Registered subtitle language:', language, '->', niceLabel);
+    } else if (niceLabel && (!existing.label || existing.label === language) && niceLabel !== language) {
+      existing.label = niceLabel;
+    }
+  }
+
   /**
    * Parse TTML/DFXP XML subtitle text into cues
    */
@@ -54,27 +93,46 @@
   }
 
   /**
-   * Parse TTML time format (e.g., "00:01:23.456" or "123.456t") to seconds
+   * Parse TTML time format to seconds.
+   *  - "00:01:23.456" / "00:01:23,456"   clock time with fractional seconds
+   *  - "00:01:23:12"  (last field frames — treated as centiseconds-ish fallback)
+   *  - "123.456"      offset seconds
+   *  - "12345678t"    ticks (ttp:tickRate=10000000 on Netflix → seconds)
    */
   function parseTTMLTime(timeStr) {
     if (!timeStr) return null;
     try {
-      // Handle HH:MM:SS.mmm format
-      const match = timeStr.match(/^(\d+):(\d{2}):(\d{2})[\.,:](\d+)/);
+      // Ticks:  digits followed by 't'
+      const tMatch = timeStr.match(/^(\d+)t$/);
+      if (tMatch) {
+        // Netflix uses tickRate=10000000 → 10^7 ticks per second
+        return parseInt(tMatch[1], 10) / 10000000;
+      }
+      // HH:MM:SS.fraction  (dot or comma = sub-second fraction)
+      const match = timeStr.match(/^(\d+):(\d{2}):(\d{2})[.,](\d+)/);
       if (match) {
         return parseInt(match[1], 10) * 3600 +
                parseInt(match[2], 10) * 60 +
                parseInt(match[3], 10) +
                parseInt(match[4].padEnd(3, '0').slice(0, 3), 10) / 1000;
       }
-      // Handle MM:SS.mmm format
-      const match2 = timeStr.match(/^(\d+):(\d{2})[\.,:](\d+)/);
+      // HH:MM:SS:frames  (colon before last field → frames; Netflix doesn't
+      // expose a frame rate reliably so we approximate by treating as ms/100)
+      const matchFrames = timeStr.match(/^(\d+):(\d{2}):(\d{2}):(\d+)/);
+      if (matchFrames) {
+        return parseInt(matchFrames[1], 10) * 3600 +
+               parseInt(matchFrames[2], 10) * 60 +
+               parseInt(matchFrames[3], 10) +
+               parseInt(matchFrames[4], 10) / 100;
+      }
+      // MM:SS.fraction
+      const match2 = timeStr.match(/^(\d+):(\d{2})[.,](\d+)/);
       if (match2) {
         return parseInt(match2[1], 10) * 60 +
                parseInt(match2[2], 10) +
                parseInt(match2[3].padEnd(3, '0').slice(0, 3), 10) / 1000;
       }
-      // Handle plain seconds
+      // Plain seconds (with optional 's' suffix)
       const match3 = timeStr.match(/^([\d.]+)/);
       if (match3) {
         return parseFloat(match3[1]);
@@ -225,14 +283,30 @@
               xhr.addEventListener('load', function() {
                 try {
                   const ct = xhr.getResponseHeader('Content-Type') || '';
-                  if (ct.indexOf('xml') >= 0 || xhr.responseText && xhr.responseText.indexOf('<?xml') === 0) {
-                    // This is a subtitle TTML file - we need to figure out the language
-                    // Send the raw XML back to content script to parse
-                    // We'll try to match this URL against known track download URLs
+                  // Extract body text: prefer responseText, fall back to response
+                  // (handles arraybuffer / blob / other responseTypes).
+                  let body = '';
+                  if (typeof xhr.responseText === 'string' && xhr.responseText.length > 0) {
+                    body = xhr.responseText;
+                  } else if (xhr.response) {
+                    if (typeof xhr.response === 'string') {
+                      body = xhr.response;
+                    } else if (xhr.response instanceof ArrayBuffer) {
+                      try { body = new TextDecoder('utf-8').decode(new Uint8Array(xhr.response)); } catch(_) {}
+                    } else if (typeof Blob !== 'undefined' && xhr.response instanceof Blob) {
+                      // Can't easily read Blob synchronously; skip (TTML is almost
+                      // always served as text, so this should rarely trigger).
+                    }
+                  }
+                  const looksXml = ct.indexOf('xml') >= 0 ||
+                                   (body.length > 0 && body.indexOf('<?xml') === 0) ||
+                                   (body.length > 0 && body.indexOf('<tt') >= 0);
+                  if (looksXml && body.length > 0) {
                     window.postMessage({
                       __nst: 'subtitle-xml-response',
                       url: url,
-                      xml: xhr.responseText
+                      contentType: ct,
+                      xml: body
                     }, '*');
                   }
                 } catch(e) {}
@@ -517,13 +591,19 @@
       if (ev.source !== window || !ev.data) return;
 
       if (ev.data.__nst === 'text-tracks-found') {
-        // Merge new tracks without overwriting labels for existing ones we've seen before
+        // Merge new tracks.  Nicer labels from the player API take precedence
+        // over the raw language code label we set when parsing TTML.
         const newTracks = ev.data.tracks || [];
         const seen = {};
         availableLanguages.forEach(function(t) { seen[t.language] = t; });
         newTracks.forEach(function(t) {
-          if (t.language && !seen[t.language]) {
-            seen[t.language] = t;
+          if (!t.language) return;
+          if (!seen[t.language]) {
+            seen[t.language] = { language: t.language, label: t.label || labelForLang(t.language), source: 'track' };
+          } else if (t.label && t.label !== t.language &&
+                     (!seen[t.language].label || seen[t.language].label === t.language)) {
+            seen[t.language].label = t.label;
+            seen[t.language].source = 'track';
           }
         });
         availableLanguages = Object.keys(seen).map(function(k) { return seen[k]; });
@@ -539,12 +619,37 @@
       }
 
       if (ev.data.__nst === 'subtitle-xml-response') {
-        // We got raw XML - but we need to know which language this is for.
-        // For now, we also get cues via textTracks when Netflix activates a track,
-        // but this XHR interception can help if cues aren't exposed via textTracks.
-        // Try parsing it anyway - we'll attribute it when we can match the URL pattern
-        // The cues will be attributed when the corresponding track is activated
-        LOG('Got subtitle XML response from', ev.data.url && ev.data.url.substring(0, 100));
+        // We got raw TTML XML.  The root <tt> element has xml:lang=".." that tells
+        // us the language, and <p begin=".." end=".."> elements carry the cues.
+        // Parse it ourselves — this works independent of whether video.textTracks
+        // got populated and independent of Netflix's private player API shape.
+        var xmlText = ev.data.xml;
+        var url = ev.data.url;
+        if (xmlText && typeof xmlText === 'string') {
+          try {
+            var parser = new DOMParser();
+            var doc = parser.parseFromString(xmlText, 'text/xml');
+            var ttEl = doc && doc.documentElement ? doc.documentElement : null;
+            var lang = null;
+            if (ttEl) {
+              // Prefer the namespaced attribute; fall back to plain getAttribute.
+              lang = ttEl.getAttributeNS('http://www.w3.org/XML/1998/namespace', 'lang') ||
+                     ttEl.getAttribute('xml:lang');
+            }
+            if (!lang) {
+              LOG('TTML response has no xml:lang, skipping:', url && url.substring(0, 100));
+              return;
+            }
+            var cues = parseTTML(xmlText, lang);
+            LOG('Parsed TTML from XHR: lang=' + lang + ' cues=' + cues.length + ' url=' + (url && url.substring(0, 80)));
+            registerLanguage(lang, null);
+            if (cues.length > 0) {
+              processCues(lang, labelForLang(lang), cues);
+            }
+          } catch (e) {
+            WARN('Failed to parse subtitle XML:', e && e.message);
+          }
+        }
       }
 
       if (ev.data.__nst === 'subtitle-info') {
