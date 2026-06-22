@@ -242,9 +242,133 @@
   }
 
   /**
+   * Helper to build org export from bilingual TTML data (complete video)
+   */
+  function buildOrgExportFromTTML() {
+    if (!config.user.useOfficialSubtitles ||
+        !config.user.officialSourceLang ||
+        !config.user.officialTargetLang) {
+      return null;
+    }
+
+    const subtitleApi = NST.netflix && NST.netflix.subtitleApi ? NST.netflix.subtitleApi : null;
+    if (!subtitleApi) return null;
+
+    const srcLang = config.user.officialSourceLang;
+    const tgtLang = config.user.officialTargetLang;
+    const srcCues = subtitleApi.getSubtitles(srcLang);
+    const tgtCues = subtitleApi.getSubtitles(tgtLang);
+
+    if (srcCues.length === 0 && tgtCues.length === 0) return null;
+
+    // Use the same pairing logic as main.js
+    function pairCues(srcCues, tgtCues, tolerance) {
+      tolerance = (typeof tolerance === 'number') ? tolerance : 1.0;
+      const segments = [];
+      let i = 0, j = 0;
+      const tgtMatched = new Set();
+
+      while (i < srcCues.length || j < tgtCues.length) {
+        const srcCue = i < srcCues.length ? srcCues[i] : null;
+        let tgtCue = null;
+        for (let k = j; k < tgtCues.length; k++) {
+          if (!tgtMatched.has(k)) { tgtCue = tgtCues[k]; break; }
+        }
+
+        if (srcCue && tgtCue) {
+          const startsClose = Math.abs(srcCue.startTime - tgtCue.startTime) < tolerance;
+          const overlaps = srcCue.startTime <= tgtCue.endTime && tgtCue.startTime <= srcCue.endTime;
+          if (startsClose || overlaps) {
+            segments.push({
+              startTime: Math.min(srcCue.startTime, tgtCue.startTime),
+              endTime: Math.max(srcCue.endTime || srcCue.startTime, tgtCue.endTime || tgtCue.startTime),
+              src: srcCue, tgt: tgtCue, kind: 'pair'
+            });
+            while (j < tgtCues.length && (tgtMatched.has(j) || tgtCues[j] !== tgtCue)) j++;
+            tgtMatched.add(j);
+            i++; j++;
+            continue;
+          }
+          if (srcCue.startTime <= tgtCue.startTime) {
+            segments.push({ startTime: srcCue.startTime, endTime: srcCue.endTime || srcCue.startTime, src: srcCue, tgt: null, kind: 'srcOnly' });
+            i++;
+          } else {
+            segments.push({ startTime: tgtCue.startTime, endTime: tgtCue.endTime || tgtCue.startTime, src: null, tgt: tgtCue, kind: 'tgtOnly' });
+            tgtMatched.add(j);
+            j++;
+          }
+        } else if (srcCue) {
+          segments.push({ startTime: srcCue.startTime, endTime: srcCue.endTime || srcCue.startTime, src: srcCue, tgt: null, kind: 'srcOnly' });
+          i++;
+        } else {
+          segments.push({ startTime: tgtCue.startTime, endTime: tgtCue.endTime || tgtCue.startTime, src: null, tgt: tgtCue, kind: 'tgtOnly' });
+          tgtMatched.add(j);
+          j++;
+        }
+      }
+      segments.sort(function(a, b) { return a.startTime - b.startTime; });
+      return segments;
+    }
+
+    const segments = pairCues(srcCues, tgtCues, 1.0);
+
+    const now = new Date();
+    const title = getNetflixTitle();
+    const url = getCanonicalWatchUrl();
+
+    const officialCount = segments.filter(function(s) { return s.kind === 'pair'; }).length;
+    const srcOnlyCount = segments.filter(function(s) { return s.kind === 'srcOnly'; }).length;
+    const tgtOnlyCount = segments.filter(function(s) { return s.kind === 'tgtOnly'; }).length;
+
+    let header = '';
+    header += '#+TITLE: ' + title + '\n';
+    header += '#+DATE: ' + now.toISOString() + '\n';
+    header += '#+URL: ' + url + '\n';
+    header += '#+SOURCE_LANG: ' + srcLang + '\n';
+    header += '#+TARGET_LANG: ' + tgtLang + '\n';
+    header += '#+SUBTITLE_COUNT: ' + segments.length + '\n';
+    header += '#+OFFICIAL_SUBTITLES: ' + officialCount;
+    if (srcOnlyCount || tgtOnlyCount) {
+      header += ' (source-only=' + srcOnlyCount + ', target-only=' + tgtOnlyCount + ')';
+    }
+    header += '\n\n';
+
+    const body = segments.map(function(seg) {
+      let original, translation, videoTime, tags = '';
+      if (seg.kind === 'pair') {
+        original = seg.src.text;
+        translation = seg.tgt.text;
+        videoTime = seg.src.startTime;
+        tags = ' :OFFICIAL:';
+      } else if (seg.kind === 'srcOnly') {
+        original = seg.src.text;
+        translation = SRC_ONLY_TEXT;
+        videoTime = seg.src.startTime;
+        tags = ' :OFFICIAL:SRC_ONLY:';
+      } else {
+        original = seg.tgt.text;
+        translation = TGT_ONLY_TEXT;
+        videoTime = seg.tgt.startTime;
+        tags = ' :OFFICIAL:TGT_ONLY:';
+      }
+      const vt = (typeof videoTime === 'number' && isFinite(videoTime)) ? ' [' + fmtTime(videoTime) + ']' : '';
+      return '* ' + escOrgHeading(original) + vt + tags + '\n\n' + translation + '\n';
+    }).join('\n');
+
+    return header + body;
+  }
+
+  /**
    * Build the Org-mode export content
    */
   function buildOrgExport() {
+    // First try to build from complete TTML data if we have official bilingual subtitles
+    const fromTTML = buildOrgExportFromTTML();
+    if (fromTTML) {
+      return fromTTML;
+    }
+
+    // Fall back to captured data
     const now = new Date();
     const title = getNetflixTitle();
     const url = getCanonicalWatchUrl();

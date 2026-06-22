@@ -1495,3 +1495,27 @@ Changed default port from 8765 to 31314 in all places:
 - server/nst_server.py: DEFAULT_PORT, docstrings
 - popup.js: AI_SERVER_BASE
 - server/run.sh: default PORT
+
+* DONE 2 new tasks:
+
+1. I took a look at the bilingual.org, it's not complete, as you can see from
+
+   /private/var/folders/rr/7h8kmzq57xl143b6qcp1r0z00000gn/T/nst-job-g0jfpbrav2bx-m798zyb2/bilingual.org
+
+   Looks like you only sent the part of subtitles from beginning to current play position for translation, what I want is the whole video's subtitles (all subtitles from the 2 languages combined in the way as defined before).
+
+2. Hope can see from nst_server.py the progress info of the claude command call.
+
+** Implementation summary:
+
+1. **Complete bilingual.org from full TTML data** (src/content/export.js):
+   - Added `buildOrgExportFromTTML()` function that builds the complete org file directly from the captured TTML data (not just the captions shown so far in the UI)
+   - Modified `buildOrgExport()` to first try `buildOrgExportFromTTML()` when official bilingual subtitles are enabled, falling back to captured data otherwise
+   - This ensures the entire video's subtitles are sent for AI optimization, not just what's been viewed so far
+
+2. **Progress info from claude command** (server/nst_server.py):
+   - Rewrote `run_job()` to use `subprocess.Popen()` instead of `subprocess.run()` to stream output incrementally
+   - Added separate threads to read stdout and stderr without blocking
+   - Updates `jobs[job_id]["progress"]` every 0.5s with the latest output line from Claude (prefixed with "claude: ")
+   - Shows "claude is working..." when we have stderr output but no clear progress lines yet
+   - Also fixed the prompt template to use the correct placeholder text `（无源字幕）` instead of `（无字幕）` for :TGT_ONLY: entries

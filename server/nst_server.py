@@ -46,7 +46,6 @@ import tempfile
 import threading
 import time
 import traceback
-import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote
 
@@ -71,23 +70,24 @@ Context:
 - The translations in this file are OFFICIAL NETFLIX TRANSLATIONS (not Google machine translation). Human translators already translated them. Character names, place names, and terminology are intentionally chosen by Netflix and should generally be PRESERVED — do NOT second-guess names you don't recognize or rename them to your own preferred transliteration.
 - The source subtitle (in the source language, often Korean/Japanese) may contain CC / closed-caption information: speaker labels in brackets like `[수근]`, sound effects like `(웃음)`, music markers `♪`, off-screen narration markers, descriptions of on-screen text. The target subtitle sometimes omits these CC markers.
 - Some entries are tagged :SRC_ONLY: meaning the source subtitle exists but Netflix provides no target translation (common when the director intentionally leaves lines untranslated, or for songs).  For these entries, the body is currently the placeholder `（无目标字幕）`. Please provide an accurate translation of the source into {tgt_lang} and replace the placeholder. Keep the heading (source text), timestamp, and tags unchanged.
-- Some entries are tagged :TGT_ONLY: meaning there is a target subtitle but no source subtitle. This happens for ON-SCREEN TEXT (letters, signs, documents) in K-dramas: Netflix skips captioning the source language because the viewer is already reading it visually, but it still provides a translation. For these entries, replace the placeholder `（无源字幕）` with a brief note like `[画面文字]` (or the equivalent appropriate note in the target language), or a short transcription of the on-screen text if you can infer it from context.
+- Some entries are tagged :TGT_ONLY: meaning there is a target subtitle but no source subtitle. This happens for ON-SCREEN TEXT (letters, signs, documents) in K-dramas: Netflix skips captioning the source language because the viewer is already reading it visually, but it still provides a translation. For these entries, replace the placeholder `（无源字幕）` with a brief note like `[on-screen text]` (or the equivalent appropriate note in the target language), or a short transcription of the on-screen text if you can infer it from context.
 - {style_guide_note}
 
 Files you can read in the current directory:
 - bilingual.org -- the bilingual org file you must revise.
-- source.ttml   -- the raw source-language TTML (optional, may be missing).
-- target.ttml   -- the raw target-language TTML (optional, may be missing).
+- source.ttml -- the raw source-language TTML (optional, may be missing).
+- target.ttml -- the raw target-language TTML (optional, may be missing).
 
 Your tasks, in order of priority:
-1. Fill in any missing CC information. If a source subtitle has a speaker label, sound effect, music marker, or narration label that is missing from the target translation, add it (preserving the target language, e.g. in Chinese `(笑)`, `[音乐]`).
+1. Fill in any missing CC information. If a source subtitle has a speaker label, sound effect, music marker, or narration label that is missing from the target translation, add it (preserving the target language, e.g. in Chinese `(笑)`, `[music]`).
 2. For :SRC_ONLY: entries, translate the source into {tgt_lang} naturally. Replace `（无目标字幕）` with the translation.
-3. For :TGT_ONLY: entries, replace `（无源字幕）` with a short note indicating the cue is for on-screen text (e.g. `[画面文字]` for Chinese, `[on-screen text]` for English, etc.).  If the target text itself has a clear typo or obvious Netflix timing artifact, you may fix it conservatively — do NOT rewrite good target text.
+3. For :TGT_ONLY: entries, replace `（无源字幕）` with a short note indicating the cue is for on-screen text (e.g. `[on-screen text]` for English, `[画面文字]` for Chinese, etc.).  If the target text itself has a clear typo or obvious Netflix timing artifact, you may fix it conservatively — do NOT rewrite good target text.
 4. Keep every existing translation that is already complete and correct. Do NOT retranslate lines that already have a natural translation. Do NOT rename characters. Do NOT change the timestamps. Do NOT reorder entries. Do NOT drop entries. Do NOT merge or split entries.
 5. Preserve ALL org-mode structure verbatim: every `* ` heading, every `[M:SS]` or `[H:MM:SS]` timestamp, every tag (`:OFFICIAL:`, `:SRC_ONLY:`, `:TGT_ONLY:`), every `#+TITLE:`, `#+DATE:`, `#+URL:`, `#+SOURCE_LANG:`, `#+TARGET_LANG:`, `#+SUBTITLE_COUNT:`, `#+OFFICIAL_SUBTITLES:` header line. Do not add new header lines, do not remove any.
+6. If possible, split the bilingual.org into 10-minute parts and use parallel sub-agents to do the translation, then re-combine it.
 
 Output format:
-- Output the FULL revised org file content, starting with `# +TITLE:` (without the space between # and +) at line 1 and ending with the last entry body.
+- Output the FULL revised org file content, starting with `#+TITLE:` (without the space between # and +) at line 1 and ending with the last entry body.
 - Do NOT wrap the output in markdown fences (no ```org or ```).
 - Do NOT add a preamble, explanation, apology, or postamble.  Output the org text and nothing else.
 - Do NOT say "Here is the revised file" or similar.
@@ -154,7 +154,7 @@ def run_job(job_id, job_dir, org_text, src_ttml, tgt_ttml, meta):
             f.write(prompt)
 
         with jobs_lock:
-            jobs[job_id]["progress"] = "running claude (this may take a few minutes)"
+            jobs[job_id]["progress"] = "starting claude..."
 
         # Invoke claude -p from within the job dir.  We use --dangerously-skip-permissions
         # so the non-interactive subprocess does not hang waiting for permission prompts;
@@ -170,18 +170,64 @@ def run_job(job_id, job_dir, org_text, src_ttml, tgt_ttml, meta):
             job_dir,
         ]
 
-        # Capture stdout (this is the response).  Don't let Claude read stdin.
-        proc = subprocess.run(
+        # Capture stdout/stderr incrementally to show progress
+        stdout_parts = []
+        stderr_parts = []
+        last_update = time.time()
+
+        with subprocess.Popen(
             cmd,
             cwd=job_dir,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            timeout=600,  # 10 minutes should be plenty
-        )
+            bufsize=0
+        ) as proc:
+            # Use threads to read both streams without blocking
+            def read_stream(stream, parts_list, is_stderr):
+                nonlocal last_update
+                while True:
+                    chunk = stream.read(1024)
+                    if not chunk:
+                        break
+                    text = chunk.decode("utf-8", errors="replace")
+                    parts_list.append(text)
+                    # Update progress periodically or when we get meaningful output
+                    now = time.time()
+                    if now - last_update > 0.5:
+                        last_update = now
+                        # Try to extract a meaningful progress message
+                        combined = ''.join(parts_list[-5:]) if is_stderr else ''.join(parts_list)
+                        lines = [l.strip() for l in combined.splitlines() if l.strip()]
+                        with jobs_lock:
+                            if job_id in jobs and jobs[job_id]["status"] == "running":
+                                if lines:
+                                    progress_msg = lines[-1][:100]
+                                    jobs[job_id]["progress"] = "claude: " + progress_msg
+                                elif is_stderr:
+                                    jobs[job_id]["progress"] = "claude is working..."
 
-        stdout = proc.stdout.decode("utf-8", errors="replace")
-        stderr = proc.stderr.decode("utf-8", errors="replace")
+            stdout_thread = threading.Thread(target=read_stream, args=(proc.stdout, stdout_parts, False))
+            stderr_thread = threading.Thread(target=read_stream, args=(proc.stderr, stderr_parts, True))
+            stdout_thread.start()
+            stderr_thread.start()
+
+            # Wait for process to complete with timeout
+            start_time = time.time()
+            while True:
+                if proc.poll() is not None:
+                    break
+                if time.time() - start_time > 600:  # 10 minutes
+                    proc.kill()
+                    raise subprocess.TimeoutExpired(cmd, 600)
+                time.sleep(0.1)
+
+            stdout_thread.join()
+            stderr_thread.join()
+            returncode = proc.returncode
+
+        stdout = ''.join(stdout_parts)
+        stderr = ''.join(stderr_parts)
 
         # Save raw output for debugging.
         with open(os.path.join(job_dir, "claude.stdout"), "w", encoding="utf-8") as f:
@@ -190,12 +236,12 @@ def run_job(job_id, job_dir, org_text, src_ttml, tgt_ttml, meta):
             with open(os.path.join(job_dir, "claude.stderr"), "w", encoding="utf-8") as f:
                 f.write(stderr)
 
-        if proc.returncode != 0:
+        if returncode != 0:
             # Don't fail hard; claude sometimes exits non-zero but still emits output.
             # Fall through to parse stdout if it looks like org.
             if "#+TITLE:" not in stdout and "* " not in stdout[:5000]:
                 raise RuntimeError(
-                    "claude exited %d: %s" % (proc.returncode, stderr[-500:] or stdout[-500:])
+                    "claude exited %d: %s" % (returncode, stderr[-500:] or stdout[-500:])
                 )
 
         revised = strip_markdown_fences(stdout)
@@ -270,7 +316,7 @@ class Handler(BaseHTTPRequestHandler):
 
         try:
             ctype = self.headers.get("Content-Type", "")
-            # Parse multipart form data via stdlib cgi.FieldStorage.<[BOS_never_used_51bce0c785ca2f68081bfa7d91973934]> to parse multipart.  This is a bit fiddly because
+            # Parse multipart form data via stdlib cgi.FieldStorage.  to parse multipart.  This is a bit fiddly because
             # FieldStorage wants a file-like object and a content-type with boundary.
             form = cgi.FieldStorage(
                 fp=self.rfile,
@@ -337,7 +383,7 @@ def main():
 
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     sys.stderr.write(
-        "[nst-server] listening on http://%s:%d (version %s)\n" % (args.host, args.port, VERSION)
+        "[nst-server] listening on http://%s:%s (version %s)\n" % (args.host, args.port, VERSION)
     )
     sys.stderr.write("[nst-server] claude binary: %s\n" % CLAUDE_BIN)
     try:
