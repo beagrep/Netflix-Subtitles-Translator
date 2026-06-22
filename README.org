@@ -1488,3 +1488,10 @@ utils.js:8 [NST] Got subtitle XML response from https://ipv6-c106-sin001-ix.1.oc
      AI 优化按钮在拿到字幕后可以对任意字幕做后处理，未来如果希望完全用 AI 代替
      Google，可以在 translator 里把 fallback 换成调本地服务——本次没动这一块
      以避免范围蔓延。
+
+* DONE Change the server port default to be 31314, because 8765 is already taken in my env.
+
+Changed default port from 8765 to 31314 in all places:
+- server/nst_server.py: DEFAULT_PORT, docstrings
+- popup.js: AI_SERVER_BASE
+- server/run.sh: default PORT

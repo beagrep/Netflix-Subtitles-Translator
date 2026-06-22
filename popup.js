@@ -330,7 +330,7 @@
 	});
 
 	// ---- AI optimize button -------------------------------------------------
-	var AI_SERVER_BASE = 'http://127.0.0.1:8765';
+	var AI_SERVER_BASE = 'http://127.0.0.1:31314';
 	var aiPollHandle = null;
 
 	function setAIStatus(msg, isError) {

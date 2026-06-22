@@ -2,7 +2,7 @@
 """
 Netflix Subtitles Translator - local AI optimization server.
 
-Listens on 127.0.0.1 (default port 8765) and accepts bilingual subtitle
+Listens on 127.0.0.1 (default port 31314) and accepts bilingual subtitle
 org-mode text plus optional source/target TTML files, spawns Claude Code
 (https://claude.com/code) as a subprocess to optimize/revise them, and
 returns the revised org text.
@@ -17,7 +17,7 @@ Protocol:
                                        "error": "..."}
 
 Start:
-    python3 nst_server.py [--port 8765]
+    python3 nst_server.py [--port 31314]
     or ./run.sh
 
 The server binds ONLY to 127.0.0.1; no external network access.  Jobs write
@@ -51,7 +51,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote
 
 VERSION = "1.0"
-DEFAULT_PORT = int(os.environ.get("NST_PORT", "8765"))
+DEFAULT_PORT = int(os.environ.get("NST_PORT", "31314"))
 
 CLAUDE_BIN = os.environ.get("NST_CLAUDE_BIN", "claude")
 JOB_TTL_SECONDS = 3600  # clean up jobs older than an hour
