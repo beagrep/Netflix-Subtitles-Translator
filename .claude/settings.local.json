@@ -31,7 +31,11 @@
       "Bash(python3 -)",
       "Bash(node --check \"src/content/config.js\")",
       "Bash(node --check \"popup.js\")",
-      "Bash(pre-commit run *)"
+      "Bash(pre-commit run *)",
+      "Bash(node --check src/content/netflix/subtitle-api.js)",
+      "Bash(node --check src/content/netflix/subtitles.js)",
+      "Bash(node --check src/content/main.js)",
+      "Bash(node -c src/content/netflix/subtitle-api.js)"
     ]
   }
 }
